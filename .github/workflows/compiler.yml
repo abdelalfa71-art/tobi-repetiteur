@@ -3,16 +3,15 @@ on: [push, workflow_dispatch]
 jobs:
   apk:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: app-android
+    defaults: {run: {working-directory: app-android}}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+        with: {distribution: temurin, java-version: "17"}
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
-      - name: C
+        with: {gradle-version: "8.9"}
+      - name: Cles Supabase
+        run: echo "SUPABASE_URL=https://edzzikmtxeslhvowbnix.supabase.co" > local.properties && echo "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVkenppa210eGVzbGh2b3dibml4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNjE0MDIsImV4cCI6MjA5OTgzNzQwMn0.i5k6gzYSAaNQyp33LNo0pRCdH0cQuXkTiHx7DqFK6uQ" >> local.properties
+      - run: gradle assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with: {name: tobi-apk, path: app-android/app/build/outputs/apk/debug/*.apk}
