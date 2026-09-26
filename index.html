@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tobi — Répétiteur</title>
+<link rel="icon" href="data:,">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root {
+  --rouge: #C8402F; --vert: #2E6B57; --jaune: #F2C43D;
+  --fond: #F3EEE4; --surface: #FFFFFF; --texte: #2C2A26; --texte-doux: #6B6557;
+  --bordure: #DDD5C5;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { height: 100%; margin: 0; background: var(--fond); color: var(--texte); }
+#app { min-height: 100%; display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; position: relative; }
+button { font-family: inherit; cursor: pointer; border: none; }
+input, textarea { font-family: inherit; }
+.btn { background: var(--rouge); color: #fff; padding: 14px; border-radius: 14px; font-size: 16px; font-weight: 600; width: 100%; }
+.btn:disabled { opacity: .5; }
+.btn-outline { background: transparent; color: var(--rouge); border: 2px solid var(--rouge); padding: 12px; border-radius: 14px; font-weight: 600; width: 100%; }
+.btn-text { background: none; color: var(--texte-doux); padding: 10px; text-decoration: underline; }
+.champ { width: 100%; padding: 14px; border: 2px solid var(--bordure); border-radius: 12px; font-size: 16px; margin-bottom: 10px; background: var(--surface); color: var(--texte); }
+.carte { background: var(--surface); border-radius: 16px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.centre { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.ecran { flex: 1; display: flex; flex-direction: column; padding: 20px; gap: 12px; }
+.tobi-img { width: 160px; height: auto; }
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 18px; margin: 0; }
+p { margin: 0; color: var(--texte-doux); font-size: 14px; }
+.erreur { color: var(--rouge); font-size: 13px; }
+.grille { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.carte-matiere { background: var(--surface); border-radius: 16px; padding: 20px 10px; text-align: center; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.bandeau-hors-ligne { background: #FDECEA; color: var(--rouge); padding: 8px; text-align: center; font-size: 13px; }
+.tableau-zone { display: flex; gap: 6px; padding: 0 12px; }
+.tableau { flex: 1; background: #FDFDFB; border: 3px solid #C9CDD2; border-radius: 10px; padding: 16px; min-height: 90px; display: flex; align-items: center; font-size: 20px; font-weight: 700; color: var(--vert); }
+.messages { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; -webkit-overflow-scrolling: touch; }
+.bulle { max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: 15px; line-height: 1.4; }
+.bulle.tobi { align-self: flex-start; background: #E9F3EC; }
+.bulle.enfant { align-self: flex-end; background: #FDE7E4; }
+.barre-saisie { display: flex; gap: 8px; padding: 10px 12px; align-items: center; background: var(--fond); }
+.champ-saisie { flex: 1; padding: 12px 16px; border-radius: 24px; border: 2px solid var(--bordure); background: var(--surface); font-size: 15px; }
+.rond-bouton { width: 46px; height: 46px; border-radius: 50%; background: var(--rouge); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.rond-bouton:disabled { opacity: .4; }
+.ardoise-cadre { margin: 0 12px; background: #8A5A2E; border-radius: 14px; padding: 8px; display: flex; gap: 6px; }
+.ardoise-canvas { flex: 1; background: #2F4A3A; border-radius: 8px; touch-action: none; }
+.outils-ardoise { display: flex; flex-direction: column; gap: 6px; width: 40px; }
+.outil { width: 100%; aspect-ratio: 1; border-radius: 8px; background: #F4EDE0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+.outil.actif { background: var(--jaune); border: 2px solid #5A3E00; }
+.bouton-montrer { writing-mode: vertical-rl; background: var(--rouge); color: #fff; border-radius: 8px; font-weight: 700; font-size: 13px; padding: 8px 4px; }
+.bouton-montrer:disabled { background: #B08A6A; }
+.ecoute-badge { text-align: center; font-size: 12px; color: var(--vert); padding: 4px; }
+.spinner { width: 20px; height: 20px; border: 3px solid var(--bordure); border-top-color: var(--rouge); border-radius: 50%; animation: tourner .8s linear infinite; }
+@keyframes tourner { to { transform: rotate(360deg); } }
+.chip { padding: 8px 14px; border-radius: 20px; border: 2px solid var(--bordure); background: var(--surface); font-weight: 600; }
+.chip.actif { background: var(--rouge); color: #fff; border-color: var(--rouge); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.entete { display: flex; align-items: center; gap: 10px; padding: 12px; }
+.top-bar { display:flex; justify-content:space-between; align-items:center; padding: 10px 14px; }
+.badge-direct { background: var(--rouge); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; }
+:root:not([data-theme="light"]) { }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fond: #1C1B18; --surface: #2A2823; --texte: #F0ECE3; --texte-doux: #A69E8E; --bordure: #3D3A33;
+  }
+  .bulle.tobi { background: #22362B; } .bulle.enfant { background: #3A2622; }
+}
+:root[data-theme="dark"] {
+  --fond: #1C1B18; --surface: #2A2823; --texte: #F0ECE3; --texte-doux: #A69E8E; --bordure: #3D3A33;
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const BASE_IMG = "https://raw.githubusercontent.com/abdelalfa71-art/tobi-repetiteur/main/app-android/app/src/main/res/drawable/";
+const SPRITES = {
+  renard_idle: BASE_IMG + "renard_idle.webp",
+  renard_explaining: BASE_IMG + "renard_explaining.webp",
+  renard_thinking: BASE_IMG + "renard_thinking.webp",
+  renard_celebrate: BASE_IMG + "renard_celebrate.webp",
+  renard_encouraging: BASE_IMG + "renard_encouraging.webp"
+};
+const SUPABASE_URL = "https://edzzikmtxeslhvowbnix.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVkenppa210eGVzbGh2b3dibml4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNjE0MDIsImV4cCI6MjA5OTgzNzQwMn0.i5k6gzYSAaNQyp33LNo0pRCdH0cQuXkTiHx7DqFK6uQ";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const app = document.getElementById("app");
+let etat = { route: "connexion", parentId: null, enfant: null, niveaux: [], matieres: [], params: {} };
+
+function chargerLocal(cle, defaut) { try { const v = localStorage.getItem(cle); return v ? JSON.parse(v) : defaut; } catch(e) { return defaut; } }
+function sauverLocal(cle, val) { try { localStorage.setItem(cle, JSON.stringify(val)); } catch(e) {} }
+
+function estEnLigne() { return navigator.onLine; }
+
+async function appelFonction(nom, corps) {
+  const session = (await sb.auth.getSession()).data.session;
+  const jeton = session ? session.access_token : SUPABASE_ANON_KEY;
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/${nom}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${jeton}`, "apikey": SUPABASE_ANON_KEY },
+    body: JSON.stringify(corps)
+  });
+  return r;
+}
+
+const voix = {
+  file: [], enCours: false,
+  parler(texte, onDebut, onFin) {
+    if (!('speechSynthesis' in window)) { onFin && onFin(); return; }
+    const u = new SpeechSynthesisUtterance(texte);
+    u.lang = "fr-FR";
+    u.onstart = () => onDebut && onDebut();
+    u.onend = () => onFin && onFin();
+    u.onerror = () => onFin && onFin();
+    speechSynthesis.speak(u);
+  },
+  ajouter(phrase) {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(phrase);
+    u.lang = "fr-FR";
+    speechSynthesis.speak(u);
+  },
+  arreter() { try { speechSynthesis.cancel(); } catch(e) {} }
+};
+
+function creerReconnaisseur() {
+  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!R) return null;
+  const r = new R();
+  r.lang = "fr-FR"; r.interimResults = false; r.maxAlternatives = 1;
+  return r;
+}
+
+function router(route, params = {}) {
+  etat.route = route; etat.params = params;
+  render();
+}
+
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    etat.parentId = session.user.id;
+    await chargerReferentiel();
+    router("choix-enfant");
+  } else {
+    router("connexion");
+  }
+}
+
+async function chargerReferentiel() {
+  try {
+    const { data: niveaux } = await sb.from("niveaux").select("*").order("ordre");
+    const { data: matieres } = await sb.from("matieres").select("*");
+    etat.niveaux = niveaux || chargerLocal("niveaux", []);
+    etat.matieres = matieres || chargerLocal("matieres", []);
+    sauverLocal("niveaux", etat.niveaux); sauverLocal("matieres", etat.matieres);
+  } catch(e) {
+    etat.niveaux = chargerLocal("niveaux", []);
+    etat.matieres = chargerLocal("matieres", []);
+  }
+}
+
+function render() {
+  app.innerHTML = "";
+  const vues = {
+    "connexion": vueConnexion, "choix-enfant": vueChoixEnfant, "inscription": vueInscription,
+    "accueil": vueAccueil, "lecons": vueLecons, "dialogue": vueDialogue, "parametres": vueParametres
+  };
+  (vues[etat.route] || vueConnexion)();
+}
+
+function vueConnexion() {
+  let creation = false, erreur = "", enCours = false;
+  const wrap = document.createElement("div");
+  wrap.className = "ecran centre";
+  function dessiner() {
+    wrap.innerHTML = `
+      <img class="tobi-img" src="${SPRITES.renard_explaining}">
+      <h1>${creation ? "Créez votre compte parent" : "Espace parent"}</h1>
+      <input class="champ" id="email" type="email" placeholder="E-mail" style="margin-top:12px">
+      <input class="champ" id="mdp" type="password" placeholder="Mot de passe (6 caractères min.)">
+      ${erreur ? `<p class="erreur">${erreur}</p>` : ""}
+      <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : (creation ? "Créer mon compte" : "Se connecter")}</button>
+      <button class="btn-text" id="toggle">${creation ? "J'ai déjà un compte" : "Première fois ? Créer un compte"}</button>
+    `;
+    wrap.querySelector("#toggle").onclick = () => { creation = !creation; erreur = ""; dessiner(); };
+    wrap.querySelector("#go").onclick = async () => {
+      const email = wrap.querySelector("#email").value.trim();
+      const mdp = wrap.querySelector("#mdp").value;
+      if (!email.includes("@")) { erreur = "Entrez une adresse e-mail valide"; dessiner(); return; }
+      if (mdp.length < 6) { erreur = "Le mot de passe doit faire au moins 6 caractères"; dessiner(); return; }
+      enCours = true; erreur = ""; dessiner();
+      try {
+        const fn = creation ? sb.auth.signUp({ email, password: mdp }) : sb.auth.signInWithPassword({ email, password: mdp });
+        const { data, error } = await fn;
+        if (error) throw error;
+        if (data.session) {
+          etat.parentId = data.user.id;
+          await chargerReferentiel();
+          router("choix-enfant");
+          return;
+        } else {
+          erreur = "Compte créé. Confirmez l'e-mail reçu, puis connectez-vous.";
+          creation = false;
+        }
+      } catch(e) {
+        erreur = (e && e.message) ? e.message : (creation ? "Création impossible." : "E-mail ou mot de passe incorrect.");
+      }
+      enCours = false; dessiner();
+    };
+  }
+  dessiner();
+  app.appendChild(wrap);
+}
+
+async function vueChoixEnfant() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran centre";
+  wrap.innerHTML = `<img class="tobi-img" src="${SPRITES.renard_idle}"><h1>Qui révise avec moi aujourd'hui ?</h1><div id="liste" style="width:100%"></div>`;
+  app.appendChild(wrap);
+
+  let enfants = [];
+  try {
+    const { data } = await sb.from("enfants").select("*").eq("parent_id", etat.parentId);
+    enfants = data || [];
+  } catch(e) {}
+
+  const liste = wrap.querySelector("#liste");
+  enfants.forEach(e => {
+    const niveau = etat.niveaux.find(n => n.id === e.niveau_id);
+    const carte = document.createElement("div");
+    carte.className = "carte";
+    carte.style.marginTop = "10px"; carte.style.display = "flex"; carte.style.justifyContent = "space-between"; carte.style.cursor = "pointer";
+    carte.innerHTML = `<b style="font-size:18px">${e.prenom}</b><span>${niveau ? niveau.nom : ""}</span>`;
+    carte.onclick = () => { etat.enfant = { ...e, niveau_nom: niveau ? niveau.nom : "" }; router("accueil"); };
+    liste.appendChild(carte);
+  });
+
+  const bouton = document.createElement("button");
+  bouton.className = "btn-outline"; bouton.style.marginTop = "16px"; bouton.textContent = "Ajouter un enfant";
+  bouton.onclick = () => router("inscription");
+  wrap.appendChild(bouton);
+}
+
+function vueInscription() {
+  let erreur = "", niveauChoisi = null;
+  const wrap = document.createElement("div");
+  wrap.className = "ecran centre";
+  function dessiner() {
+    wrap.innerHTML = `
+      <img class="tobi-img" src="${SPRITES.renard_explaining}">
+      <h1>Bonjour ! Moi c'est Tobi.</h1><p>Et toi, comment tu t'appelles ?</p>
+      <input class="champ" id="prenom" placeholder="Prénom de l'enfant" style="margin-top:12px">
+      <input class="champ" id="prononciation" placeholder="Comment le prononcer (facultatif)">
+      <div style="align-self:flex-start;font-weight:600;margin:6px 0">Sa classe</div>
+      <div class="chips" id="chips"></div>
+      ${erreur ? `<p class="erreur">${erreur}</p>` : ""}
+      <button class="btn" id="go" style="margin-top:16px">C'est parti avec Tobi !</button>
+    `;
+    const chips = wrap.querySelector("#chips");
+    etat.niveaux.forEach(n => {
+      const c = document.createElement("button");
+      c.className = "chip" + (niveauChoisi && niveauChoisi.id === n.id ? " actif" : "");
+      c.textContent = n.code;
+      c.onclick = () => { niveauChoisi = n; dessiner(); };
+      chips.appendChild(c);
+    });
+    wrap.querySelector("#go").onclick = async () => {
+      const prenom = wrap.querySelector("#prenom").value.trim();
+      const prononciation = wrap.querySelector("#prononciation").value.trim();
+      if (!prenom) { erreur = "Écris le prénom de l'enfant"; dessiner(); return; }
+      if (!niveauChoisi) { erreur = "Choisis sa classe"; dessiner(); return; }
+      try {
+        const { data, error } = await sb.from("enfants").insert({ parent_id: etat.parentId, prenom, niveau_id: niveauChoisi.id }).select().single();
+        if (error) throw error;
+        etat.enfant = { ...data, prononciation, niveau_nom: niveauChoisi.nom };
+        sauverLocal("prononciation_" + data.id, prononciation);
+        router("accueil");
+      } catch(e) { erreur = "Erreur de connexion, réessaie."; dessiner(); }
+    };
+  }
+  dessiner();
+  app.appendChild(wrap);
+}
+
+function vueAccueil() {
+  const e = etat.enfant;
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `
+    <div class="centre">
+      <img class="tobi-img" src="${SPRITES.renard_explaining}">
+      <h1>Salut ${e.prenom} ! On révise quoi ?</h1>
+      <p>Niveau ${e.niveau_nom}</p>
+    </div>
+    <div class="grille" id="grille" style="margin-top:10px"></div>
+    <button class="btn-outline" id="capturer">📸 Montrer mon cahier à Tobi</button>
+    <button class="btn-text" id="params">⚙️ Paramètres</button>
+  `;
+  const grille = wrap.querySelector("#grille");
+  etat.matieres.forEach(m => {
+    const c = document.createElement("div");
+    c.className = "carte-matiere"; c.textContent = m.nom; c.style.cursor = "pointer";
+    c.onclick = () => router("lecons", { matiere: m });
+    grille.appendChild(c);
+  });
+  wrap.querySelector("#params").onclick = () => router("parametres");
+  wrap.querySelector("#capturer").onclick = () => alert("La capture de cahier arrive dans la prochaine mise à jour !");
+  app.appendChild(wrap);
+}
+
+async function vueLecons() {
+  const matiere = etat.params.matiere;
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="entete"><button class="btn-text" id="retour" style="padding:4px">←</button><h1>${matiere.nom}</h1></div><div id="liste" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px"></div>`;
+  wrap.querySelector("#retour").onclick = () => router("accueil");
+  app.appendChild(wrap);
+
+  const liste = wrap.querySelector("#liste");
+  liste.innerHTML = `<div class="centre"><div class="spinner"></div></div>`;
+
+  let lecons = [];
+  try {
+    const { data } = await sb.from("lecons").select("*").eq("niveau_id", etat.enfant.niveau_id).eq("matiere_id", matiere.id).order("semaine");
+    lecons = data || [];
+  } catch(e) {}
+
+  liste.innerHTML = "";
+  if (lecons.length === 0) {
+    liste.innerHTML = `<div class="centre"><img class="tobi-img" src="${SPRITES.renard_encouraging}"><p>Pas encore de leçon ici pour cette matière.</p></div>`;
+    return;
+  }
+  lecons.forEach(l => {
+    const c = document.createElement("div");
+    c.className = "carte"; c.style.cursor = "pointer"; c.style.display = "flex"; c.style.justifyContent = "space-between";
+    c.innerHTML = `<span>${l.titre}</span>${l.enfant_id ? "<span>📒</span>" : ""}`;
+    c.onclick = () => router("dialogue", { lecon: l, matiereId: matiere.id });
+    liste.appendChild(c);
+  });
+}
+
+function vueParametres() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  let mode = chargerLocal("mode_ecriture", "ardoise");
+  function dessiner() {
+    wrap.innerHTML = `
+      <h1>Paramètres</h1>
+      <p style="margin-top:8px">Pour répondre par écrit, l'enfant utilise :</p>
+      <div class="carte" id="opt-ardoise" style="margin-top:10px;cursor:pointer;display:flex;gap:10px;align-items:center">
+        <input type="radio" ${mode === "ardoise" ? "checked" : ""}><div><b>L'ardoise</b><br><span style="font-size:13px;color:var(--texte-doux)">Il écrit avec son doigt. Conseillé SIL à CE1.</span></div>
+      </div>
+      <div class="carte" id="opt-clavier" style="margin-top:10px;cursor:pointer;display:flex;gap:10px;align-items:center">
+        <input type="radio" ${mode === "clavier" ? "checked" : ""}><div><b>Le clavier</b></div>
+      </div>
+      <button class="btn" id="retour" style="margin-top:20px">Retour</button>
+    `;
+    wrap.querySelector("#opt-ardoise").onclick = () => { mode = "ardoise"; sauverLocal("mode_ecriture", mode); dessiner(); };
+    wrap.querySelector("#opt-clavier").onclick = () => { mode = "clavier"; sauverLocal("mode_ecriture", mode); dessiner(); };
+    wrap.querySelector("#retour").onclick = () => router("accueil");
+  }
+  dessiner();
+  app.appendChild(wrap);
+}
+
+async function vueDialogue() {
+  const lecon = etat.params.lecon;
+  const matiereId = etat.params.matiereId;
+  const prononciation = chargerLocal("prononciation_" + etat.enfant.id, "");
+  const modeEcriture = chargerLocal("mode_ecriture", "ardoise");
+
+  let dialogueId = null, messages = [], enAttente = true, leconTerminee = false, ecritTableau = null;
+  let tobiParle = false, enLigne = estEnLigne();
+
+  const wrap = document.createElement("div");
+  wrap.className = "ecran"; wrap.style.padding = "0"; wrap.style.gap = "0";
+  app.appendChild(wrap);
+
+  function tpl() {
+    wrap.innerHTML = `
+      ${!enLigne ? '<div class="bandeau-hors-ligne">Pas de connexion — Tobi ne peut pas continuer le cours en direct</div>' : ""}
+      <div class="top-bar">
+        <button class="btn-text" id="retour" style="padding:2px">←</button>
+        <b style="font-size:14px">${lecon.titre}</b>
+        <span style="width:24px"></span>
+      </div>
+      ${enLigne && !tobiParle && !leconTerminee ? '<div class="ecoute-badge">👂 Tobi t\\'écoute</div>' : ""}
+      <div class="tableau-zone">
+        <div class="tableau" id="tableau"></div>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div id="saisie"></div>
+    `;
+    wrap.querySelector("#retour").onclick = () => router("lecons", { matiere: etat.matieres.find(m => m.id === matiereId) });
+    dessinerTableau();
+    dessinerMessages();
+    dessinerSaisie();
+  }
+
+  function dessinerTableau() {
+    const t = wrap.querySelector("#tableau");
+    if (t) t.textContent = ecritTableau || "";
+  }
+
+  function dessinerMessages() {
+    const m = wrap.querySelector("#messages");
+    if (!m) return;
+    m.innerHTML = "";
+    messages.forEach(msg => {
+      const b = document.createElement("div");
+      b.className = "bulle " + (msg.role === "tobi" ? "tobi" : "enfant");
