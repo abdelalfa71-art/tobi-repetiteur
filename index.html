@@ -391,7 +391,7 @@ async function vueDialogue() {
         <b style="font-size:14px">${lecon.titre}</b>
         <span style="width:24px"></span>
       </div>
-      ${enLigne && !tobiParle && !leconTerminee ? '<div class="ecoute-badge">👂 Tobi t\\'écoute</div>' : ""}
+      ${enLigne && !tobiParle && !leconTerminee ? '<div class="ecoute-badge">👂 Tobi écoute</div>' : ""}
       <div class="tableau-zone">
         <div class="tableau" id="tableau"></div>
       </div>
@@ -416,3 +416,193 @@ async function vueDialogue() {
     messages.forEach(msg => {
       const b = document.createElement("div");
       b.className = "bulle " + (msg.role === "tobi" ? "tobi" : "enfant");
+      b.textContent = msg.contenu;
+      m.appendChild(b);
+    });
+    if (enAttente) {
+      const b = document.createElement("div");
+      b.className = "bulle tobi"; b.style.fontStyle = "italic"; b.textContent = "Tobi réfléchit…";
+      m.appendChild(b);
+    }
+    m.scrollTop = m.scrollHeight + 500;
+  }
+
+  function dessinerSaisie() {
+    const s = wrap.querySelector("#saisie");
+    if (!s) return;
+    if (leconTerminee) {
+      s.innerHTML = `<p style="text-align:center;padding:20px;font-weight:600;color:var(--texte)">Leçon terminée, bravo ! 🎉</p>`;
+      return;
+    }
+    if (modeEcriture === "ardoise") {
+      s.innerHTML = `
+        <div style="display:flex;justify-content:flex-end;padding:6px 12px"><button class="rond-bouton" id="micro">🎤</button></div>
+        <div class="ardoise-cadre">
+          <canvas class="ardoise-canvas" id="canvas"></canvas>
+          <div class="outils-ardoise">
+            <div class="outil actif" id="outil-craie">✏️</div>
+            <div class="outil" id="outil-gomme">🧽</div>
+            <div class="outil" id="outil-effacer">🗑️</div>
+            <button class="bouton-montrer" id="montrer" style="flex:1;margin-top:4px">Montrer à Tobi</button>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+      `;
+      initArdoise();
+    } else {
+      s.innerHTML = `
+        <div class="barre-saisie">
+          <input class="champ-saisie" id="texte" placeholder="Écris ta réponse…" ${enAttente || !enLigne ? "disabled" : ""}>
+          <button class="rond-bouton" id="envoyer" ${enAttente || !enLigne ? "disabled" : ""}>➤</button>
+          <button class="rond-bouton" id="micro" ${enAttente || !enLigne ? "disabled" : ""}>🎤</button>
+        </div>
+      `;
+      wrap.querySelector("#envoyer").onclick = () => {
+        const v = wrap.querySelector("#texte").value.trim();
+        if (v) envoyerReponse(v, "texte");
+      };
+      wrap.querySelector("#texte").onkeydown = (e) => { if (e.key === "Enter") wrap.querySelector("#envoyer").click(); };
+    }
+    const micro = wrap.querySelector("#micro");
+    if (micro) micro.onclick = () => lancerMicro();
+  }
+
+  function lancerMicro() {
+    const r = creerReconnaisseur();
+    if (!r) { alert("Micro non disponible sur ce navigateur."); return; }
+    r.onresult = (ev) => { const texte = ev.results[0][0].transcript; envoyerReponse(texte, "audio"); };
+    r.onerror = () => {};
+    try { r.start(); } catch(e) {}
+  }
+
+  let ctx, dessin = false, modeGomme = false, dernierPoint = null;
+  function initArdoise() {
+    const canvas = wrap.querySelector("#canvas");
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = (rect.width - 46) * 2; canvas.height = 260;
+    canvas.style.width = (rect.width - 46) + "px"; canvas.style.height = "130px";
+    ctx = canvas.getContext("2d");
+    ctx.scale(2,1);
+    ctx.strokeStyle = "#F5F2E8"; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+    function pos(e) {
+      const r = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      return { x: (t.clientX - r.left), y: (t.clientY - r.top) };
+    }
+    function debut(e) { e.preventDefault(); dessin = true; dernierPoint = pos(e); }
+    function bouger(e) {
+      if (!dessin) return; e.preventDefault();
+      const p = pos(e);
+      if (modeGomme) { ctx.clearRect(p.x-15, p.y-15, 30, 30); }
+      else { ctx.beginPath(); ctx.moveTo(dernierPoint.x, dernierPoint.y); ctx.lineTo(p.x, p.y); ctx.stroke(); }
+      dernierPoint = p;
+    }
+    function fin(e) { dessin = false; }
+    canvas.addEventListener("mousedown", debut); canvas.addEventListener("mousemove", bouger); window.addEventListener("mouseup", fin);
+    canvas.addEventListener("touchstart", debut, {passive:false}); canvas.addEventListener("touchmove", bouger, {passive:false}); canvas.addEventListener("touchend", fin);
+
+    wrap.querySelector("#outil-craie").onclick = () => { modeGomme = false; wrap.querySelector("#outil-craie").classList.add("actif"); wrap.querySelector("#outil-gomme").classList.remove("actif"); };
+    wrap.querySelector("#outil-gomme").onclick = () => { modeGomme = true; wrap.querySelector("#outil-gomme").classList.add("actif"); wrap.querySelector("#outil-craie").classList.remove("actif"); };
+    wrap.querySelector("#outil-effacer").onclick = () => ctx.clearRect(0,0,canvas.width,canvas.height);
+    wrap.querySelector("#montrer").onclick = () => envoyerArdoise(canvas);
+  }
+
+  async function envoyerArdoise(canvas) {
+    const bouton = wrap.querySelector("#montrer");
+    bouton.disabled = true; bouton.textContent = "Tobi lit…";
+    const base64 = canvas.toDataURL("image/png").split(",")[1];
+    try {
+      const r = await appelFonction("lire-ardoise", { image_base64: base64, contexte: ecritTableau || lecon.titre });
+      const res = await r.json();
+      if (res.lecture) {
+        const msg = res.alternatives && res.alternatives.length
+          ? `${res.lecture} [écrit à la main, autres lectures possibles : ${res.alternatives.join(" / ")}]`
+          : res.lecture;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        envoyerReponse(msg, "ardoise");
+      } else {
+        bouton.disabled = false; bouton.textContent = "Montrer à Tobi";
+        alert("Je n'ai pas bien vu, réessaie !");
+      }
+    } catch(e) { bouton.disabled = false; bouton.textContent = "Montrer à Tobi"; }
+  }
+
+  async function envoyerReponse(texte, type) {
+    messages.push({ role: "enfant", contenu: texte });
+    dessinerMessages();
+    await tourAvecFlux(texte, type);
+  }
+
+  async function tourAvecFlux(messageEnfant, type) {
+    enAttente = true; tpl();
+    let indexBulle = -1;
+    voix.arreter();
+    if (messageEnfant) voix.ajouter(["Hmm…","Voyons voir…","Alors…","D'accord…"][Math.floor(Math.random()*4)]);
+
+    try {
+      const historique = messages.map(m => ({ role: m.role, contenu: m.contenu }));
+      const r = await appelFonction("dialoguer", {
+        titre_lecon: lecon.titre, contenu_texte: lecon.contenu_texte || "",
+        historique, message_enfant: messageEnfant, prenom_enfant: etat.enfant.prenom,
+        profil_alignement: null, evenement: null
+      });
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let tampon = "", metaLigne = null, texteComplet = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        tampon += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = tampon.indexOf("\n")) >= 0) {
+          const ligne = tampon.slice(0, idx).trim(); tampon = tampon.slice(idx+1);
+          if (!ligne) continue;
+          if (ligne.startsWith("§§") || (ligne.startsWith("{") && ligne.includes("message_tobi"))) {
+            metaLigne = ligne; continue;
+          }
+          texteComplet += (texteComplet ? " " : "") + ligne;
+          enAttente = false;
+          if (indexBulle < 0) { messages.push({ role: "tobi", contenu: ligne }); indexBulle = messages.length - 1; }
+          else { messages[indexBulle].contenu += " " + ligne; }
+          dessinerMessages();
+          voix.ajouter(ligne);
+        }
+      }
+      let meta = {};
+      if (metaLigne) {
+        try {
+          if (metaLigne.startsWith("§§")) meta = JSON.parse(metaLigne.slice(2));
+          else { const anc = JSON.parse(metaLigne); meta = anc; if (!texteComplet) { messages.push({role:"tobi",contenu:anc.message_tobi}); voix.ajouter(anc.message_tobi); } }
+        } catch(e) {}
+      }
+      if (meta.ecrit_au_tableau) ecritTableau = meta.ecrit_au_tableau;
+      leconTerminee = !!meta.lecon_terminee;
+      dessinerTableau();
+    } catch(e) {
+      messages.push({ role: "tobi", contenu: `Oups, la connexion a coupé. Tu peux répéter, ${etat.enfant.prenom} ?` });
+    }
+    enAttente = false;
+    tpl();
+  }
+
+  tpl();
+  try {
+    const { data, error } = await sb.from("dialogues").insert({ enfant_id: etat.enfant.id, lecon_id: lecon.id }).select().single();
+    if (error) throw error;
+    dialogueId = data.id;
+    await tourAvecFlux(null, null);
+  } catch(e) {
+    enAttente = false;
+    messages.push({ role: "tobi", contenu: "Je n'arrive pas à me connecter. Vérifie ta connexion et reviens." });
+    tpl();
+  }
+
+  window.addEventListener("online", () => { enLigne = true; tpl(); });
+  window.addEventListener("offline", () => { enLigne = false; tpl(); });
+}
+
+init();
+</script>
+</body>
+</html>
