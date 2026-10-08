@@ -1,5 +1,9 @@
 name: Compiler Tobi
-on: [push, workflow_dispatch]
+# Désactivé en automatique : l'app Android native (app-android/) n'a jamais été
+# terminée (fichiers Kotlin tronqués dès leur premier commit) et ne compile pas.
+# Le produit réellement utilisé est l'app web (index.html). Se déclenche
+# manuellement (workflow_dispatch) si quelqu'un reprend ce chantier.
+on: [workflow_dispatch]
 jobs:
   apk:
     runs-on: ubuntu-latest
