@@ -11,6 +11,7 @@
   --rouge: #C8402F; --vert: #2E6B57; --jaune: #F2C43D;
   --fond: #F3EEE4; --surface: #FFFFFF; --texte: #2C2A26; --texte-doux: #6B6557;
   --bordure: #DDD5C5;
+  --renard-orange: #E8793C; --renard-creme: #FBF6EC; --renard-brun: #3D2817; --renard-sombre: #2A1A0D;
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -29,7 +30,14 @@ input, textarea { font-family: inherit; }
 .carte { background: var(--surface); border-radius: 16px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 .centre { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .ecran { flex: 1; display: flex; flex-direction: column; padding: 20px; gap: 12px; }
-.tobi-img { width: 160px; height: auto; }
+.tobi-mascot { width: 160px; height: auto; flex-shrink: 0; }
+.tobi-mascot.anim-respire { animation: respire 3s ease-in-out infinite; }
+.tobi-mascot.anim-rebond { animation: rebond .6s ease-in-out infinite; }
+@keyframes respire { 0%,100% { transform: scale(1); } 50% { transform: scale(1.015); } }
+@keyframes rebond { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.tobi-mini { width: 30px; height: 30px; flex-shrink: 0; margin-top: 2px; }
+.ligne-bulle { display: flex; gap: 6px; align-items: flex-end; }
+.ligne-bulle.enfant { justify-content: flex-end; }
 h1 { font-size: 22px; margin: 0; }
 h2 { font-size: 18px; margin: 0; }
 p { margin: 0; color: var(--texte-doux); font-size: 14px; }
@@ -47,12 +55,13 @@ p { margin: 0; color: var(--texte-doux); font-size: 14px; }
 .champ-saisie { flex: 1; padding: 12px 16px; border-radius: 24px; border: 2px solid var(--bordure); background: var(--surface); font-size: 15px; }
 .rond-bouton { width: 46px; height: 46px; border-radius: 50%; background: var(--rouge); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
 .rond-bouton:disabled { opacity: .4; }
-.ardoise-cadre { margin: 0 12px; background: #8A5A2E; border-radius: 14px; padding: 8px; display: flex; gap: 6px; }
+.ardoise-cadre { margin: 0 12px; background: #8A5A2E; border-radius: 14px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ardoise-corps { display: flex; gap: 6px; }
 .ardoise-canvas { flex: 1; background: #2F4A3A; border-radius: 8px; touch-action: none; }
 .outils-ardoise { display: flex; flex-direction: column; gap: 6px; width: 40px; }
 .outil { width: 100%; aspect-ratio: 1; border-radius: 8px; background: #F4EDE0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 .outil.actif { background: var(--jaune); border: 2px solid #5A3E00; }
-.bouton-montrer { writing-mode: vertical-rl; background: var(--rouge); color: #fff; border-radius: 8px; font-weight: 700; font-size: 13px; padding: 8px 4px; }
+.bouton-montrer { background: var(--rouge); color: #fff; border-radius: 10px; font-weight: 700; font-size: 14px; padding: 10px; width: 100%; }
 .bouton-montrer:disabled { background: #B08A6A; }
 .ecoute-badge { text-align: center; font-size: 12px; color: var(--vert); padding: 4px; }
 .spinner { width: 20px; height: 20px; border: 3px solid var(--bordure); border-top-color: var(--rouge); border-radius: 50%; animation: tourner .8s linear infinite; }
@@ -78,14 +87,89 @@ p { margin: 0; color: var(--texte-doux); font-size: 14px; }
 <body>
 <div id="app"></div>
 <script>
-const BASE_IMG = "https://raw.githubusercontent.com/abdelalfa71-art/tobi-repetiteur/main/app-android/app/src/main/res/drawable/";
-const SPRITES = {
-  renard_idle: BASE_IMG + "renard_idle.webp",
-  renard_explaining: BASE_IMG + "renard_explaining.webp",
-  renard_thinking: BASE_IMG + "renard_thinking.webp",
-  renard_celebrate: BASE_IMG + "renard_celebrate.webp",
-  renard_encouraging: BASE_IMG + "renard_encouraging.webp"
-};
+function tobiBras(cote, humeur) {
+  const sx = cote === "g" ? 66 : 134;
+  let rotation = 0, extra = "";
+  if (humeur === "explique" && cote === "d") { rotation = -55; extra = `<line x1="0" y1="52" x2="-6" y2="85" stroke="var(--renard-brun)" stroke-width="3" stroke-linecap="round" transform="translate(${sx} 140)"/>`; }
+  if (humeur === "reflechit" && cote === "d") rotation = -128;
+  if (humeur === "celebre") rotation = cote === "g" ? 150 : -150;
+  if (humeur === "encourage" && cote === "d") rotation = -150;
+  const main = (humeur === "encourage" && cote === "d")
+    ? `<rect x="-11" y="44" width="22" height="20" rx="8" fill="var(--renard-orange)" stroke="var(--renard-brun)" stroke-width="2.5"/>`
+    : `<circle cx="0" cy="55" r="11" fill="var(--renard-orange)" stroke="var(--renard-brun)" stroke-width="2.5"/>`;
+  return `
+    <g transform="translate(${sx} 140) rotate(${rotation})">
+      <rect x="-11" y="-5" width="22" height="55" rx="11" fill="#FFFFFF" stroke="var(--renard-brun)" stroke-width="2.5"/>
+      ${main}
+      ${extra}
+    </g>`;
+}
+
+function tobiVisage(humeur) {
+  let sourcils, bouche, dx = 0, dy = 0;
+  switch (humeur) {
+    case "explique":
+      sourcils = `<rect x="70" y="47" width="20" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(-12 80 49)"/>
+                  <rect x="110" y="47" width="20" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(12 120 49)"/>`;
+      bouche = `<ellipse cx="100" cy="106" rx="8" ry="6" fill="var(--renard-sombre)"/>`; break;
+    case "reflechit":
+      sourcils = `<rect x="70" y="52" width="18" height="4" rx="2" fill="var(--renard-brun)"/>
+                  <rect x="108" y="43" width="20" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(-18 118 45)"/>`;
+      bouche = `<path d="M90,107 L111,104" stroke="var(--renard-brun)" stroke-width="3.5" stroke-linecap="round" fill="none"/>`;
+      dx = 2; dy = -3; break;
+    case "celebre":
+      sourcils = `<rect x="68" y="42" width="20" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(-18 78 44)"/>
+                  <rect x="112" y="42" width="20" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(18 122 44)"/>`;
+      bouche = `<path d="M78,100 Q100,126 122,100 Q100,114 78,100 Z" fill="var(--renard-sombre)"/>`; break;
+    case "encourage":
+      sourcils = `<rect x="71" y="49" width="19" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(-8 81 51)"/>
+                  <rect x="110" y="49" width="19" height="4.5" rx="2.2" fill="var(--renard-brun)" transform="rotate(8 120 51)"/>`;
+      bouche = `<path d="M84,103 Q100,115 116,103" stroke="var(--renard-brun)" stroke-width="3.5" stroke-linecap="round" fill="none"/>`; break;
+    default:
+      sourcils = `<rect x="72" y="53" width="18" height="4" rx="2" fill="var(--renard-brun)" transform="rotate(-5 81 55)"/>
+                  <rect x="110" y="53" width="18" height="4" rx="2" fill="var(--renard-brun)" transform="rotate(5 119 55)"/>`;
+      bouche = `<path d="M87,104 Q100,111 113,104" stroke="var(--renard-brun)" stroke-width="3" stroke-linecap="round" fill="none"/>`;
+  }
+  return `
+    <circle cx="${82+dx}" cy="${70+dy}" r="5" fill="var(--renard-sombre)"/>
+    <circle cx="${118+dx}" cy="${70+dy}" r="5" fill="var(--renard-sombre)"/>
+    ${sourcils}
+    <path d="M94,78 L106,78 L100,86 Z" fill="var(--renard-sombre)"/>
+    ${bouche}
+    <circle cx="82" cy="70" r="16" fill="none" stroke="var(--renard-sombre)" stroke-width="3"/>
+    <circle cx="118" cy="70" r="16" fill="none" stroke="var(--renard-sombre)" stroke-width="3"/>
+    <line x1="98" y1="70" x2="102" y2="70" stroke="var(--renard-sombre)" stroke-width="3"/>
+    <line x1="66" y1="68" x2="50" y2="55" stroke="var(--renard-sombre)" stroke-width="2.5"/>
+    <line x1="134" y1="68" x2="150" y2="55" stroke="var(--renard-sombre)" stroke-width="2.5"/>
+  `;
+}
+
+function tobiSVG(humeur, largeur, mini) {
+  const vb = mini ? "30 0 140 140" : "0 0 215 222";
+  const hauteur = mini ? largeur : Math.round(largeur * 222 / 215);
+  const classeAnim = humeur === "celebre" ? "anim-rebond" : (mini ? "" : "anim-respire");
+  return `
+  <svg class="${mini ? 'tobi-mini' : 'tobi-mascot'} ${classeAnim}" width="${largeur}" height="${hauteur}" viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" aria-label="Tobi le renard">
+    <path d="M62,46 L40,4 L88,34 Z" fill="var(--renard-orange)" stroke="var(--renard-brun)" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M64,40 L49,15 L80,32 Z" fill="var(--renard-creme)"/>
+    <path d="M138,46 L160,4 L112,34 Z" fill="var(--renard-orange)" stroke="var(--renard-brun)" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M136,40 L151,15 L120,32 Z" fill="var(--renard-creme)"/>
+    ${!mini ? `<rect x="68" y="200" width="24" height="14" rx="6" fill="var(--renard-sombre)"/>
+    <rect x="108" y="200" width="24" height="14" rx="6" fill="var(--renard-sombre)"/>` : ""}
+    <circle cx="100" cy="78" r="46" fill="var(--renard-orange)" stroke="var(--renard-brun)" stroke-width="3"/>
+    <ellipse cx="100" cy="95" rx="28" ry="22" fill="var(--renard-creme)" stroke="var(--renard-brun)" stroke-width="3"/>
+    ${tobiVisage(humeur)}
+    ${!mini ? `
+    <path d="M142,155 C190,135 205,185 178,212 C192,185 180,160 138,172 Z" fill="var(--renard-orange)" stroke="var(--renard-brun)" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M186,175 C194,190 188,203 175,210 C186,198 186,185 178,175 Z" fill="var(--renard-creme)"/>
+    <rect x="56" y="128" width="88" height="78" rx="28" fill="#FFFFFF" stroke="var(--renard-brun)" stroke-width="3"/>
+    <path d="M92,128 L108,128 L100,148 Z" fill="var(--rouge)"/>
+    <circle cx="100" cy="139" r="5" fill="var(--jaune)"/>
+    ${tobiBras("g", humeur)}
+    ${tobiBras("d", humeur)}
+    ` : ""}
+  </svg>`;
+}
 const SUPABASE_URL = "https://edzzikmtxeslhvowbnix.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVkenppa210eGVzbGh2b3dibml4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNjE0MDIsImV4cCI6MjA5OTgzNzQwMn0.i5k6gzYSAaNQyp33LNo0pRCdH0cQuXkTiHx7DqFK6uQ";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -181,7 +265,7 @@ function vueConnexion() {
   wrap.className = "ecran centre";
   function dessiner() {
     wrap.innerHTML = `
-      <img class="tobi-img" src="${SPRITES.renard_explaining}">
+      ${tobiSVG("explique", 160)}
       <h1>${creation ? "Créez votre compte parent" : "Espace parent"}</h1>
       <input class="champ" id="email" type="email" placeholder="E-mail" style="margin-top:12px">
       <input class="champ" id="mdp" type="password" placeholder="Mot de passe (6 caractères min.)">
@@ -222,7 +306,7 @@ function vueConnexion() {
 async function vueChoixEnfant() {
   const wrap = document.createElement("div");
   wrap.className = "ecran centre";
-  wrap.innerHTML = `<img class="tobi-img" src="${SPRITES.renard_idle}"><h1>Qui révise avec moi aujourd'hui ?</h1><div id="liste" style="width:100%"></div>`;
+  wrap.innerHTML = `${tobiSVG("idle", 160)}<h1>Qui révise avec moi aujourd'hui ?</h1><div id="liste" style="width:100%"></div>`;
   app.appendChild(wrap);
 
   let enfants = [];
@@ -254,7 +338,7 @@ function vueInscription() {
   wrap.className = "ecran centre";
   function dessiner() {
     wrap.innerHTML = `
-      <img class="tobi-img" src="${SPRITES.renard_explaining}">
+      ${tobiSVG("explique", 160)}
       <h1>Bonjour ! Moi c'est Tobi.</h1><p>Et toi, comment tu t'appelles ?</p>
       <input class="champ" id="prenom" placeholder="Prénom de l'enfant" style="margin-top:12px">
       <input class="champ" id="prononciation" placeholder="Comment le prononcer (facultatif)">
@@ -295,7 +379,7 @@ function vueAccueil() {
   wrap.className = "ecran";
   wrap.innerHTML = `
     <div class="centre">
-      <img class="tobi-img" src="${SPRITES.renard_explaining}">
+      ${tobiSVG("idle", 160)}
       <h1>Salut ${e.prenom} ! On révise quoi ?</h1>
       <p>Niveau ${e.niveau_nom}</p>
     </div>
@@ -334,7 +418,7 @@ async function vueLecons() {
 
   liste.innerHTML = "";
   if (lecons.length === 0) {
-    liste.innerHTML = `<div class="centre"><img class="tobi-img" src="${SPRITES.renard_encouraging}"><p>Pas encore de leçon ici pour cette matière.</p></div>`;
+    liste.innerHTML = `<div class="centre">${tobiSVG("encourage", 160)}<p>Pas encore de leçon ici pour cette matière.</p></div>`;
     return;
   }
   lecons.forEach(l => {
@@ -414,15 +498,36 @@ async function vueDialogue() {
     if (!m) return;
     m.innerHTML = "";
     messages.forEach(msg => {
+      const estTobi = msg.role === "tobi";
+      const ligne = document.createElement("div");
+      ligne.className = "ligne-bulle " + (estTobi ? "tobi" : "enfant");
+      if (estTobi) {
+        const avatar = document.createElement("div");
+        avatar.innerHTML = tobiSVG("idle", 30, true);
+        ligne.appendChild(avatar.firstElementChild);
+      }
       const b = document.createElement("div");
-      b.className = "bulle " + (msg.role === "tobi" ? "tobi" : "enfant");
+      b.className = "bulle " + (estTobi ? "tobi" : "enfant");
       b.textContent = msg.contenu;
-      m.appendChild(b);
+      ligne.appendChild(b);
+      m.appendChild(ligne);
     });
     if (enAttente) {
+      const ligne = document.createElement("div");
+      ligne.className = "ligne-bulle tobi";
+      const avatar = document.createElement("div");
+      avatar.innerHTML = tobiSVG("reflechit", 30, true);
+      ligne.appendChild(avatar.firstElementChild);
       const b = document.createElement("div");
       b.className = "bulle tobi"; b.style.fontStyle = "italic"; b.textContent = "Tobi réfléchit…";
-      m.appendChild(b);
+      ligne.appendChild(b);
+      m.appendChild(ligne);
+    }
+    if (leconTerminee) {
+      const fin = document.createElement("div");
+      fin.className = "centre";
+      fin.innerHTML = tobiSVG("celebre", 110);
+      m.appendChild(fin);
     }
     m.scrollTop = m.scrollHeight + 500;
   }
@@ -438,13 +543,15 @@ async function vueDialogue() {
       s.innerHTML = `
         <div style="display:flex;justify-content:flex-end;padding:6px 12px"><button class="rond-bouton" id="micro">🎤</button></div>
         <div class="ardoise-cadre">
-          <canvas class="ardoise-canvas" id="canvas"></canvas>
-          <div class="outils-ardoise">
-            <div class="outil actif" id="outil-craie">✏️</div>
-            <div class="outil" id="outil-gomme">🧽</div>
-            <div class="outil" id="outil-effacer">🗑️</div>
-            <button class="bouton-montrer" id="montrer" style="flex:1;margin-top:4px">Montrer à Tobi</button>
+          <div class="ardoise-corps">
+            <canvas class="ardoise-canvas" id="canvas"></canvas>
+            <div class="outils-ardoise">
+              <div class="outil actif" id="outil-craie">✏️</div>
+              <div class="outil" id="outil-gomme">🧽</div>
+              <div class="outil" id="outil-effacer">🗑️</div>
+            </div>
           </div>
+          <button class="bouton-montrer" id="montrer">Montrer à Tobi</button>
         </div>
         <div style="height:12px"></div>
       `;
