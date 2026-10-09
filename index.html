@@ -72,6 +72,23 @@ p { margin: 0; color: var(--texte-doux); font-size: 14px; }
 .entete { display: flex; align-items: center; gap: 10px; padding: 12px; }
 .top-bar { display:flex; justify-content:space-between; align-items:center; padding: 10px 14px; }
 .badge-direct { background: var(--rouge); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; }
+.pin-points { display: flex; gap: 14px; justify-content: center; margin: 18px 0 6px; }
+.pin-point { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--rouge); }
+.pin-point.plein { background: var(--rouge); }
+.pin-clavier { display: grid; grid-template-columns: repeat(3, 72px); gap: 12px; justify-content: center; margin-top: 14px; }
+.pin-touche { width: 72px; height: 72px; border-radius: 50%; background: var(--surface); color: var(--texte); font-size: 26px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.pin-touche:active { background: var(--bordure); }
+.pin-touche.vide { visibility: hidden; box-shadow: none; }
+.onglets { display: flex; gap: 8px; }
+.onglet { flex: 1; padding: 10px; border-radius: 12px; background: var(--surface); border: 2px solid var(--bordure); font-weight: 600; color: var(--texte); }
+.onglet.actif { background: var(--vert); color: #fff; border-color: var(--vert); }
+.texte-arabe { direction: rtl; text-align: right; font-family: "Noto Naskh Arabic", "Amiri", "Traditional Arabic", "Scheherazade New", serif; color: var(--texte); }
+.dua-ar { font-size: 24px; line-height: 2; }
+.dua-fr { font-size: 14px; color: var(--texte); margin-top: 6px; }
+.dua-ref { font-size: 12px; color: var(--texte-doux); margin-top: 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.btn-ecoute { background: var(--vert); color: #fff; border-radius: 10px; padding: 6px 12px; font-size: 14px; flex-shrink: 0; }
+.livre-ar { font-size: 20px; line-height: 1.7; }
+.lien-livre { display: inline-block; margin-top: 8px; background: var(--vert); color: #fff; padding: 6px 12px; border-radius: 10px; font-size: 13px; text-decoration: none; }
 :root:not([data-theme="light"]) { }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -237,7 +254,7 @@ async function init() {
   if (session) {
     etat.parentId = session.user.id;
     await chargerReferentiel();
-    router("choix-enfant");
+    router(PIN.dispo && PIN.existe(etat.parentId) ? "pin-verrou" : routeApresConnexion());
   } else {
     router("connexion");
   }
@@ -262,13 +279,14 @@ function render() {
     "connexion": vueConnexion, "choix-enfant": vueChoixEnfant, "inscription": vueInscription,
     "accueil": vueAccueil, "lecons": vueLecons, "dialogue": vueDialogue, "parametres": vueParametres,
     "mot-de-passe-oublie": vueMotDePasseOublie, "nouveau-mot-de-passe": vueNouveauMotDePasse,
-    "changer-mot-de-passe": vueChangerMotDePasse
+    "changer-mot-de-passe": vueChangerMotDePasse,
+    "pin-verrou": vuePinVerrou, "pin-creation": vuePinCreation, "arabe": vueArabe
   };
   (vues[etat.route] || vueConnexion)();
 }
 
 function vueConnexion() {
-  let creation = false, erreur = "", enCours = false;
+  let creation = false, erreur = (etat.params && etat.params.message) || "", enCours = false;
   const wrap = document.createElement("div");
   wrap.className = "ecran centre";
   function dessiner() {
@@ -298,7 +316,7 @@ function vueConnexion() {
         if (data.session) {
           etat.parentId = data.user.id;
           await chargerReferentiel();
-          router("choix-enfant");
+          router(routeApresConnexion());
           return;
         } else {
           erreur = "Compte créé. Confirmez l'e-mail reçu, puis connectez-vous.";
@@ -312,6 +330,275 @@ function vueConnexion() {
   }
   dessiner();
   app.appendChild(wrap);
+}
+
+/* ---------- Code PIN (verrou local de l'appareil) ----------
+   Le compte reste e-mail + mot de passe (Supabase). Le PIN à 4 chiffres ouvre
+   l'app sur CET appareil ; il est stocké haché (PBKDF2 + sel), jamais en clair.
+   5 erreurs => déconnexion complète. */
+const PIN = {
+  dispo: !!(window.crypto && window.crypto.subtle),
+  cle(id) { return "tobi_pin_" + id; },
+  existe(id) { return !!chargerLocal(this.cle(id), null); },
+  hex(octets) { return Array.from(octets).map(b => b.toString(16).padStart(2, "0")).join(""); },
+  octets(h) { return new Uint8Array((h.match(/.{2}/g) || []).map(x => parseInt(x, 16))); },
+  async empreinte(pin, sel) {
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: sel, iterations: 150000, hash: "SHA-256" }, base, 256);
+    return this.hex(new Uint8Array(bits));
+  },
+  async definir(id, pin) {
+    const sel = crypto.getRandomValues(new Uint8Array(16));
+    sauverLocal(this.cle(id), { sel: this.hex(sel), h: await this.empreinte(pin, sel), essais: 0 });
+  },
+  async verifier(id, pin) {
+    const d = chargerLocal(this.cle(id), null);
+    if (!d) return { ok: false, restant: 0 };
+    const h = await this.empreinte(pin, this.octets(d.sel));
+    if (h === d.h) { d.essais = 0; sauverLocal(this.cle(id), d); return { ok: true }; }
+    d.essais = (d.essais || 0) + 1; sauverLocal(this.cle(id), d);
+    return { ok: false, restant: Math.max(0, 5 - d.essais) };
+  },
+  effacer(id) { try { localStorage.removeItem(this.cle(id)); } catch(e) {} }
+};
+
+function routeApresConnexion() {
+  return PIN.dispo && !PIN.existe(etat.parentId) ? "pin-creation" : "choix-enfant";
+}
+
+async function deconnecter(message) {
+  const id = etat.parentId;
+  try { await sb.auth.signOut({ scope: "local" }); } catch(e) {}
+  if (id) PIN.effacer(id);
+  etat.parentId = null; etat.enfant = null;
+  router("connexion", { message: message || "" });
+}
+
+function clavierPin(surComplet) {
+  let saisie = "", occupe = false;
+  const racine = document.createElement("div");
+  function maj() {
+    racine.innerHTML = `
+      <div class="pin-points">${[0, 1, 2, 3].map(i => `<span class="pin-point ${i < saisie.length ? "plein" : ""}"></span>`).join("")}</div>
+      <div class="pin-clavier">${["1","2","3","4","5","6","7","8","9","","0","⌫"].map(t =>
+        t === "" ? '<span class="pin-touche vide"></span>'
+                 : `<button class="pin-touche" data-t="${t}" aria-label="${t === "⌫" ? "Effacer" : t}">${t}</button>`).join("")}</div>`;
+    racine.querySelectorAll("[data-t]").forEach(b => b.onclick = async () => {
+      if (occupe) return;
+      const t = b.dataset.t;
+      if (t === "⌫") { saisie = saisie.slice(0, -1); maj(); return; }
+      if (saisie.length >= 4) return;
+      saisie += t; maj();
+      if (saisie.length === 4) {
+        occupe = true;
+        const pin = saisie;
+        try { await surComplet(pin); } finally { occupe = false; }
+      }
+    });
+  }
+  racine.reinit = () => { saisie = ""; maj(); };
+  maj();
+  return racine;
+}
+
+function vuePinVerrou() {
+  let erreur = "";
+  const wrap = document.createElement("div");
+  wrap.className = "ecran centre";
+  const haut = document.createElement("div");
+  haut.style.width = "100%";
+  function entete() {
+    haut.innerHTML = `${tobiSVG("idle", 140)}<h1>Entrez votre code</h1>
+      <p style="margin-top:6px">Code à 4 chiffres de l'espace parent</p>
+      ${erreur ? `<p class="erreur" style="margin-top:8px">${erreur}</p>` : ""}`;
+  }
+  const pad = clavierPin(async (pin) => {
+    const r = await PIN.verifier(etat.parentId, pin);
+    if (r.ok) { router("choix-enfant"); return; }
+    if (r.restant <= 0) { await deconnecter("Trop d'essais. Reconnectez-vous avec votre e-mail."); return; }
+    erreur = `Code incorrect. Il reste ${r.restant} essai${r.restant > 1 ? "s" : ""}.`;
+    entete(); pad.reinit();
+  });
+  const oubli = document.createElement("button");
+  oubli.className = "btn-text"; oubli.style.marginTop = "16px"; oubli.textContent = "Code oublié ?";
+  oubli.onclick = () => deconnecter("Reconnectez-vous avec votre e-mail pour choisir un nouveau code.");
+  entete();
+  wrap.append(haut, pad, oubli);
+  app.appendChild(wrap);
+}
+
+function vuePinCreation() {
+  const changer = !!(etat.params && etat.params.changer);
+  let etape = changer ? "ancien" : "nouveau", premier = "", erreur = "";
+  const wrap = document.createElement("div");
+  wrap.className = "ecran centre";
+  const haut = document.createElement("div");
+  haut.style.width = "100%";
+  const titres = {
+    ancien: "Entrez votre code actuel",
+    nouveau: changer ? "Choisissez votre nouveau code" : "Choisissez un code à 4 chiffres",
+    confirmer: "Confirmez le code"
+  };
+  function entete() {
+    haut.innerHTML = `${tobiSVG("explique", 140)}<h1>${titres[etape]}</h1>
+      ${!changer && etape === "nouveau" ? `<p style="margin-top:6px">Ce code ouvre Tobi sur ce téléphone. Sur un autre appareil, vous utiliserez votre e-mail et votre mot de passe.</p>` : ""}
+      ${erreur ? `<p class="erreur" style="margin-top:8px">${erreur}</p>` : ""}`;
+  }
+  const pad = clavierPin(async (pin) => {
+    erreur = "";
+    if (etape === "ancien") {
+      const r = await PIN.verifier(etat.parentId, pin);
+      if (r.ok) etape = "nouveau";
+      else if (r.restant <= 0) { await deconnecter("Trop d'essais. Reconnectez-vous avec votre e-mail."); return; }
+      else erreur = `Code incorrect. Il reste ${r.restant} essai${r.restant > 1 ? "s" : ""}.`;
+    } else if (etape === "nouveau") {
+      if (/^(\d)\1{3}$/.test(pin) || pin === "1234" || pin === "4321") erreur = "Ce code est trop facile à deviner. Choisissez-en un autre.";
+      else { premier = pin; etape = "confirmer"; }
+    } else {
+      if (pin === premier) { await PIN.definir(etat.parentId, pin); router(changer ? "parametres" : "choix-enfant"); return; }
+      erreur = "Les deux codes sont différents. Recommencez."; etape = "nouveau"; premier = "";
+    }
+    entete(); pad.reinit();
+  });
+  entete();
+  wrap.append(haut, pad);
+  if (changer) {
+    const retour = document.createElement("button");
+    retour.className = "btn-text"; retour.style.marginTop = "16px"; retour.textContent = "Annuler";
+    retour.onclick = () => router("parametres");
+    wrap.appendChild(retour);
+  }
+  app.appendChild(wrap);
+}
+
+/* ---------- Partie Arabe : invocations et livres ---------- */
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+async function chargerTout(table, colonnes, ordres) {
+  const sortie = [], pas = 1000;
+  for (let debut = 0; ; debut += pas) {
+    let q = sb.from(table).select(colonnes);
+    ordres.forEach(o => { q = q.order(o); });
+    const { data, error } = await q.range(debut, debut + pas - 1);
+    if (error) throw error;
+    sortie.push(...data);
+    if (data.length < pas) break;
+  }
+  return sortie;
+}
+
+async function donneesArabe(cle, table, colonnes, ordres) {
+  try {
+    const d = await chargerTout(table, colonnes, ordres);
+    sauverLocal(cle, d);
+    return d;
+  } catch(e) {
+    return chargerLocal(cle, []);
+  }
+}
+
+function lireArabe(texte) {
+  if (!('speechSynthesis' in window)) return;
+  voix.arreter();
+  const u = new SpeechSynthesisUtterance(texte);
+  u.lang = "ar-SA";
+  speechSynthesis.speak(u);
+}
+
+const LIBELLE_GRADE = { coran: "Coran", sahih: "Hadith authentique (sahih)", hasan: "Hadith bon (hasan)" };
+
+async function vueArabe() {
+  let onglet = (etat.params && etat.params.onglet) || "duas", categorie = null;
+  let duas = null, livres = null;
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  app.appendChild(wrap);
+
+  function squelette() {
+    wrap.innerHTML = `
+      <div class="entete" style="padding:0"><button class="btn-text" id="retour" style="padding:4px">←</button><h1>Arabe</h1></div>
+      <div class="onglets">
+        <button class="onglet ${onglet === "duas" ? "actif" : ""}" data-o="duas">🤲 Invocations</button>
+        <button class="onglet ${onglet === "livres" ? "actif" : ""}" data-o="livres">📚 Livres</button>
+      </div>
+      <div id="contenu" style="display:flex;flex-direction:column;gap:10px"></div>`;
+    wrap.querySelector("#retour").onclick = () => { voix.arreter(); router("accueil"); };
+    wrap.querySelectorAll("[data-o]").forEach(b => b.onclick = () => { onglet = b.dataset.o; categorie = null; afficher(); });
+  }
+
+  async function afficher() {
+    voix.arreter();
+    squelette();
+    const zone = wrap.querySelector("#contenu");
+    zone.innerHTML = `<div class="centre"><div class="spinner"></div></div>`;
+    if (onglet === "duas") {
+      if (!duas) duas = await donneesArabe("cache_duas", "duas_arabe",
+        "id,categorie,titre_fr,texte_ar,traduction_fr,traduction_en,reference,grade", ["categorie", "id"]);
+      listeDuas(zone);
+    } else {
+      if (!livres) livres = await donneesArabe("cache_livres", "livres_islamiques",
+        "id,categorie,titre_ar,titre_fr,auteur_fr,deces_hijri,fichier_url", ["categorie", "id"]);
+      listeLivres(zone);
+    }
+  }
+
+  function listeDuas(zone) {
+    if (!duas.length) { zone.innerHTML = `<div class="centre">${tobiSVG("encourage", 140)}<p>Les invocations arrivent bientôt.</p></div>`; return; }
+    const cats = [...new Set(duas.map(d => d.categorie))];
+    if (!categorie || !cats.includes(categorie)) categorie = cats[0];
+    zone.innerHTML = `<div class="chips" id="chips"></div><div id="items" style="display:flex;flex-direction:column;gap:10px"></div>`;
+    const chips = zone.querySelector("#chips");
+    cats.forEach(c => {
+      const b = document.createElement("button");
+      b.className = "chip" + (c === categorie ? " actif" : "");
+      b.textContent = c;
+      b.onclick = () => { categorie = c; voix.arreter(); listeDuas(zone); };
+      chips.appendChild(b);
+    });
+    const items = zone.querySelector("#items");
+    duas.filter(d => d.categorie === categorie).forEach(d => {
+      const c = document.createElement("div");
+      c.className = "carte";
+      const trad = d.traduction_fr || d.traduction_en || "";
+      c.innerHTML = `
+        <b style="font-size:14px">${esc(d.titre_fr)}</b>
+        <div class="texte-arabe dua-ar" dir="rtl" lang="ar">${esc(d.texte_ar)}</div>
+        ${trad ? `<div class="dua-fr">${esc(trad)}</div>` : ""}
+        <div class="dua-ref"><span>📖 ${esc(d.reference)}${d.grade ? " · " + esc(LIBELLE_GRADE[d.grade] || d.grade) : ""}</span>
+        <button class="btn-ecoute" aria-label="Écouter">🔊</button></div>`;
+      c.querySelector(".btn-ecoute").onclick = () => lireArabe(d.texte_ar);
+      items.appendChild(c);
+    });
+  }
+
+  function listeLivres(zone) {
+    if (!livres.length) { zone.innerHTML = `<div class="centre">${tobiSVG("encourage", 140)}<p>Les livres arrivent bientôt.</p></div>`; return; }
+    zone.innerHTML = "";
+    let derniere = null;
+    livres.forEach(l => {
+      if (l.categorie !== derniere) {
+        derniere = l.categorie;
+        const h = document.createElement("h2");
+        h.style.marginTop = "8px"; h.textContent = l.categorie;
+        zone.appendChild(h);
+      }
+      const c = document.createElement("div");
+      c.className = "carte";
+      const lien = l.fichier_url && /^https:\/\//.test(l.fichier_url)
+        ? `<a class="lien-livre" href="${esc(l.fichier_url)}" target="_blank" rel="noopener">📖 Ouvrir le livre</a>`
+        : `<p style="margin-top:8px;font-size:12px">Texte bientôt disponible</p>`;
+      c.innerHTML = `
+        <div class="texte-arabe livre-ar" dir="rtl" lang="ar">${esc(l.titre_ar)}</div>
+        <b style="font-size:15px">${esc(l.titre_fr)}</b>
+        <p style="margin-top:4px">${esc(l.auteur_fr)}${l.deces_hijri ? " (m. " + esc(l.deces_hijri) + " H)" : ""}</p>
+        ${lien}`;
+      zone.appendChild(c);
+    });
+  }
+
+  afficher();
 }
 
 function vueMotDePasseOublie() {
@@ -375,7 +662,7 @@ function vueNouveauMotDePasse() {
         if (error) throw error;
         etat.parentId = data.user.id;
         await chargerReferentiel();
-        router("choix-enfant");
+        router(routeApresConnexion());
         return;
       } catch(e) {
         erreur = (e && e.message) ? e.message : "Impossible d'enregistrer le mot de passe.";
@@ -468,9 +755,11 @@ function vueAccueil() {
       <p>Niveau ${e.niveau_nom}</p>
     </div>
     <div class="grille" id="grille" style="margin-top:10px"></div>
+    <button class="btn-outline" id="arabe">🕌 Arabe : invocations et livres</button>
     <button class="btn-outline" id="capturer">📸 Montrer mon cahier à Tobi</button>
     <button class="btn-text" id="params">⚙️ Paramètres</button>
   `;
+  wrap.querySelector("#arabe").onclick = () => router("arabe");
   const grille = wrap.querySelector("#grille");
   etat.matieres.forEach(m => {
     const c = document.createElement("div");
@@ -528,9 +817,13 @@ function vueParametres() {
       <div class="carte" id="opt-clavier" style="margin-top:10px;cursor:pointer;display:flex;gap:10px;align-items:center">
         <input type="radio" ${mode === "clavier" ? "checked" : ""}><div><b>Le clavier</b></div>
       </div>
-      <div class="carte" id="opt-mdp" style="margin-top:20px;cursor:pointer">🔑 Changer le mot de passe</div>
+      <div class="carte" id="opt-pin" style="margin-top:20px;cursor:pointer">🔒 Changer le code PIN</div>
+      <div class="carte" id="opt-mdp" style="margin-top:10px;cursor:pointer">🔑 Changer le mot de passe</div>
+      <div class="carte" id="opt-deco" style="margin-top:10px;cursor:pointer">🚪 Se déconnecter</div>
       <button class="btn" id="retour" style="margin-top:20px">Retour</button>
     `;
+    wrap.querySelector("#opt-pin").onclick = () => router("pin-creation", { changer: true });
+    wrap.querySelector("#opt-deco").onclick = () => { if (confirm("Se déconnecter ? Il faudra vous reconnecter avec votre e-mail.")) deconnecter(); };
     wrap.querySelector("#opt-ardoise").onclick = () => { mode = "ardoise"; sauverLocal("mode_ecriture", mode); dessiner(); };
     wrap.querySelector("#opt-clavier").onclick = () => { mode = "clavier"; sauverLocal("mode_ecriture", mode); dessiner(); };
     wrap.querySelector("#opt-mdp").onclick = () => router("changer-mot-de-passe");
