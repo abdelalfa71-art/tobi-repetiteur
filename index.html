@@ -192,7 +192,8 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const app = document.getElementById("app");
-let etat = { route: "connexion", parentId: null, enfant: null, niveaux: [], matieres: [], params: {} };
+let etat = { route: "connexion", parentId: null, enfant: null, niveaux: [], matieres: [], params: {}, compteNom: false };
+const LONG_CODE = 6;
 
 function chargerLocal(cle, defaut) { try { const v = localStorage.getItem(cle); return v ? JSON.parse(v) : defaut; } catch(e) { return defaut; } }
 function sauverLocal(cle, val) { try { localStorage.setItem(cle, JSON.stringify(val)); } catch(e) {} }
@@ -208,6 +209,34 @@ async function appelFonction(nom, corps) {
     body: JSON.stringify(corps)
   });
   return r;
+}
+
+async function appelAuth(corps) {
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/tobi-auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
+    body: JSON.stringify(corps)
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.erreur || "Erreur du serveur, réessayez.");
+  return d;
+}
+
+function estCompteNom(user) { return !!(user && user.user_metadata && user.user_metadata.nom); }
+
+async function ouvrirSession(sessionServeur, code) {
+  const { data, error } = await sb.auth.setSession({ access_token: sessionServeur.access_token, refresh_token: sessionServeur.refresh_token });
+  if (error || !data.session) throw new Error("Connexion impossible, réessayez.");
+  etat.parentId = data.session.user.id;
+  etat.compteNom = true;
+  await chargerReferentiel();
+  if (PIN.dispo) await PIN.definir(etat.parentId, code);
+  router("choix-enfant");
+}
+
+function messageErreur(e, defaut) {
+  if (e instanceof TypeError) return "Pas de connexion internet.";
+  return (e && e.message) ? e.message : defaut;
 }
 
 const voix = {
@@ -247,13 +276,19 @@ async function init() {
   sb.auth.onAuthStateChange((event, session) => {
     if (event === "PASSWORD_RECOVERY") {
       etat.parentId = session.user.id;
+      etat.compteNom = estCompteNom(session.user);
       router("nouveau-mot-de-passe");
     }
   });
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
     etat.parentId = session.user.id;
+    etat.compteNom = estCompteNom(session.user);
     await chargerReferentiel();
+    if (etat.compteNom && PIN.dispo && !PIN.existe(etat.parentId)) {
+      await deconnecter("Reconnectez-vous avec votre nom et votre code.");
+      return;
+    }
     router(PIN.dispo && PIN.existe(etat.parentId) ? "pin-verrou" : routeApresConnexion());
   } else {
     router("connexion");
@@ -286,45 +321,72 @@ function render() {
 }
 
 function vueConnexion() {
-  let creation = false, erreur = (etat.params && etat.params.message) || "", enCours = false;
+  let mode = "nom", erreur = (etat.params && etat.params.message) || "", enCours = false;
+  const v = { nom: "", code: "", code2: "", mail: "", email: "", mdp: "" };
   const wrap = document.createElement("div");
   wrap.className = "ecran centre";
+  function lire() { Object.keys(v).forEach(k => { const el = wrap.querySelector("#" + k); if (el) v[k] = el.value; }); }
   function dessiner() {
+    const champCode = (id, ph) => `<input class="champ" id="${id}" type="password" inputmode="numeric" maxlength="${LONG_CODE}" autocomplete="off" placeholder="${ph}">`;
     wrap.innerHTML = `
       ${tobiSVG("explique", 160)}
-      <h1>${creation ? "Créez votre compte parent" : "Espace parent"}</h1>
-      <input class="champ" id="email" type="email" placeholder="E-mail" style="margin-top:12px">
-      <input class="champ" id="mdp" type="password" placeholder="Mot de passe (6 caractères min.)">
-      ${erreur ? `<p class="erreur">${erreur}</p>` : ""}
-      <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : (creation ? "Créer mon compte" : "Se connecter")}</button>
-      <button class="btn-text" id="toggle">${creation ? "J'ai déjà un compte" : "Première fois ? Créer un compte"}</button>
-      ${!creation ? `<button class="btn-text" id="oublie">Mot de passe oublié ?</button>` : ""}
+      <h1>${mode === "creation" ? "Créez votre compte parent" : "Espace parent"}</h1>
+      ${mode === "email"
+        ? `<p style="margin-top:6px">Ancien compte avec e-mail</p>
+           <input class="champ" id="email" type="email" placeholder="E-mail" style="margin-top:12px">
+           <input class="champ" id="mdp" type="password" placeholder="Mot de passe">`
+        : `<input class="champ" id="nom" placeholder="Votre nom" autocomplete="username" style="margin-top:12px">
+           ${champCode("code", "Code à 6 chiffres")}
+           ${mode === "creation"
+             ? `${champCode("code2", "Confirmez le code")}
+                <input class="champ" id="mail" type="email" placeholder="E-mail (facultatif, pour retrouver votre code)">`
+             : ""}`}
+      ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}
+      <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : (mode === "creation" ? "Créer mon compte" : "Se connecter")}</button>
+      ${mode === "nom" ? `<button class="btn-text" id="vers-creation">Première fois ? Créer un compte</button>
+                          <button class="btn-text" id="oublie">Code oublié ?</button>
+                          <button class="btn-text" id="vers-email">Ancien compte (e-mail)</button>` : ""}
+      ${mode === "creation" ? `<button class="btn-text" id="vers-nom">J'ai déjà un compte</button>` : ""}
+      ${mode === "email" ? `<button class="btn-text" id="oublie-email">Mot de passe oublié ?</button>
+                            <button class="btn-text" id="vers-nom">Retour</button>` : ""}
     `;
-    wrap.querySelector("#toggle").onclick = () => { creation = !creation; erreur = ""; dessiner(); };
-    const oublie = wrap.querySelector("#oublie");
-    if (oublie) oublie.onclick = () => router("mot-de-passe-oublie");
+    Object.keys(v).forEach(k => { const el = wrap.querySelector("#" + k); if (el) el.value = v[k]; });
+    const aller = (m) => { lire(); mode = m; erreur = ""; dessiner(); };
+    const b = (id, f) => { const el = wrap.querySelector("#" + id); if (el) el.onclick = f; };
+    b("vers-creation", () => aller("creation"));
+    b("vers-nom", () => aller("nom"));
+    b("vers-email", () => aller("email"));
+    b("oublie", () => router("mot-de-passe-oublie"));
+    b("oublie-email", () => router("mot-de-passe-oublie"));
     wrap.querySelector("#go").onclick = async () => {
-      const email = wrap.querySelector("#email").value.trim();
-      const mdp = wrap.querySelector("#mdp").value;
-      if (!email.includes("@")) { erreur = "Entrez une adresse e-mail valide"; dessiner(); return; }
-      if (mdp.length < 6) { erreur = "Le mot de passe doit faire au moins 6 caractères"; dessiner(); return; }
-      enCours = true; erreur = ""; dessiner();
-      try {
-        const fn = creation ? sb.auth.signUp({ email, password: mdp }) : sb.auth.signInWithPassword({ email, password: mdp });
-        const { data, error } = await fn;
-        if (error) throw error;
-        if (data.session) {
+      lire();
+      if (mode === "email") {
+        if (!v.email.includes("@")) { erreur = "Entrez une adresse e-mail valide"; dessiner(); return; }
+        if (v.mdp.length < 6) { erreur = "Le mot de passe doit faire au moins 6 caractères"; dessiner(); return; }
+        enCours = true; erreur = ""; dessiner();
+        try {
+          const { data, error } = await sb.auth.signInWithPassword({ email: v.email.trim(), password: v.mdp });
+          if (error) throw error;
           etat.parentId = data.user.id;
+          etat.compteNom = estCompteNom(data.user);
           await chargerReferentiel();
           router(routeApresConnexion());
           return;
-        } else {
-          erreur = "Compte créé. Confirmez l'e-mail reçu, puis connectez-vous.";
-          creation = false;
-        }
-      } catch(e) {
-        erreur = (e && e.message) ? e.message : (creation ? "Création impossible." : "E-mail ou mot de passe incorrect.");
+        } catch(e) { erreur = e instanceof TypeError ? "Pas de connexion internet." : "E-mail ou mot de passe incorrect."; }
+        enCours = false; dessiner(); return;
       }
+      const nom = v.nom.trim();
+      if (nom.length < 3) { erreur = "Entrez votre nom (3 caractères minimum)"; dessiner(); return; }
+      if (!/^\d{6}$/.test(v.code)) { erreur = "Le code doit faire exactement 6 chiffres"; dessiner(); return; }
+      if (mode === "creation" && v.code !== v.code2) { erreur = "Les deux codes sont différents"; dessiner(); return; }
+      enCours = true; erreur = ""; dessiner();
+      try {
+        const d = await appelAuth(mode === "creation"
+          ? { action: "inscrire", nom, code: v.code, email: v.mail.trim() }
+          : { action: "connexion", nom, code: v.code });
+        await ouvrirSession(d.session, v.code);
+        return;
+      } catch(e) { erreur = messageErreur(e, "Erreur, réessayez."); }
       enCours = false; dessiner();
     };
   }
@@ -333,7 +395,7 @@ function vueConnexion() {
 }
 
 /* ---------- Code PIN (verrou local de l'appareil) ----------
-   Le compte reste e-mail + mot de passe (Supabase). Le PIN à 4 chiffres ouvre
+   Le compte (nom + code) vit côté Supabase ; le code sert aussi de verrou local. Le code à 6 chiffres ouvre
    l'app sur CET appareil ; il est stocké haché (PBKDF2 + sel), jamais en clair.
    5 erreurs => déconnexion complète. */
 const PIN = {
@@ -362,6 +424,10 @@ const PIN = {
   effacer(id) { try { localStorage.removeItem(this.cle(id)); } catch(e) {} }
 };
 
+function codeTropFacile(c) {
+  return /^(\d)\1{5}$/.test(c) || ["123456", "654321", "012345", "123123", "112233"].includes(c);
+}
+
 function routeApresConnexion() {
   return PIN.dispo && !PIN.existe(etat.parentId) ? "pin-creation" : "choix-enfant";
 }
@@ -379,7 +445,7 @@ function clavierPin(surComplet) {
   const racine = document.createElement("div");
   function maj() {
     racine.innerHTML = `
-      <div class="pin-points">${[0, 1, 2, 3].map(i => `<span class="pin-point ${i < saisie.length ? "plein" : ""}"></span>`).join("")}</div>
+      <div class="pin-points">${Array.from({ length: LONG_CODE }, (_, i) => i).map(i => `<span class="pin-point ${i < saisie.length ? "plein" : ""}"></span>`).join("")}</div>
       <div class="pin-clavier">${["1","2","3","4","5","6","7","8","9","","0","⌫"].map(t =>
         t === "" ? '<span class="pin-touche vide"></span>'
                  : `<button class="pin-touche" data-t="${t}" aria-label="${t === "⌫" ? "Effacer" : t}">${t}</button>`).join("")}</div>`;
@@ -387,9 +453,9 @@ function clavierPin(surComplet) {
       if (occupe) return;
       const t = b.dataset.t;
       if (t === "⌫") { saisie = saisie.slice(0, -1); maj(); return; }
-      if (saisie.length >= 4) return;
+      if (saisie.length >= LONG_CODE) return;
       saisie += t; maj();
-      if (saisie.length === 4) {
+      if (saisie.length === LONG_CODE) {
         occupe = true;
         const pin = saisie;
         try { await surComplet(pin); } finally { occupe = false; }
@@ -409,7 +475,7 @@ function vuePinVerrou() {
   haut.style.width = "100%";
   function entete() {
     haut.innerHTML = `${tobiSVG("idle", 140)}<h1>Entrez votre code</h1>
-      <p style="margin-top:6px">Code à 4 chiffres de l'espace parent</p>
+      <p style="margin-top:6px">Votre code à 6 chiffres</p>
       ${erreur ? `<p class="erreur" style="margin-top:8px">${erreur}</p>` : ""}`;
   }
   const pad = clavierPin(async (pin) => {
@@ -421,7 +487,7 @@ function vuePinVerrou() {
   });
   const oubli = document.createElement("button");
   oubli.className = "btn-text"; oubli.style.marginTop = "16px"; oubli.textContent = "Code oublié ?";
-  oubli.onclick = () => deconnecter("Reconnectez-vous avec votre e-mail pour choisir un nouveau code.");
+  oubli.onclick = () => deconnecter("Reconnectez-vous. Code oublié ? Utilisez le lien « Code oublié ? » ci-dessous.");
   entete();
   wrap.append(haut, pad, oubli);
   app.appendChild(wrap);
@@ -436,7 +502,7 @@ function vuePinCreation() {
   haut.style.width = "100%";
   const titres = {
     ancien: "Entrez votre code actuel",
-    nouveau: changer ? "Choisissez votre nouveau code" : "Choisissez un code à 4 chiffres",
+    nouveau: changer ? "Choisissez votre nouveau code" : "Choisissez un code à 6 chiffres",
     confirmer: "Confirmez le code"
   };
   function entete() {
@@ -452,10 +518,18 @@ function vuePinCreation() {
       else if (r.restant <= 0) { await deconnecter("Trop d'essais. Reconnectez-vous avec votre e-mail."); return; }
       else erreur = `Code incorrect. Il reste ${r.restant} essai${r.restant > 1 ? "s" : ""}.`;
     } else if (etape === "nouveau") {
-      if (/^(\d)\1{3}$/.test(pin) || pin === "1234" || pin === "4321") erreur = "Ce code est trop facile à deviner. Choisissez-en un autre.";
+      if (codeTropFacile(pin)) erreur = "Ce code est trop facile à deviner. Choisissez-en un autre.";
       else { premier = pin; etape = "confirmer"; }
     } else {
-      if (pin === premier) { await PIN.definir(etat.parentId, pin); router(changer ? "parametres" : "choix-enfant"); return; }
+      if (pin === premier) {
+        if (changer && etat.compteNom) {
+          const { error } = await sb.auth.updateUser({ password: pin });
+          if (error) { erreur = "Impossible de changer le code, réessayez."; etape = "nouveau"; premier = ""; entete(); pad.reinit(); return; }
+        }
+        await PIN.definir(etat.parentId, pin);
+        router(changer ? "parametres" : "choix-enfant");
+        return;
+      }
       erreur = "Les deux codes sont différents. Recommencez."; etape = "nouveau"; premier = "";
     }
     entete(); pad.reinit();
@@ -602,19 +676,21 @@ async function vueArabe() {
 }
 
 function vueMotDePasseOublie() {
-  let erreur = "", envoye = false, enCours = false;
+  let erreur = "", envoye = false, enCours = false, legacy = false;
   const wrap = document.createElement("div");
   wrap.className = "ecran centre";
   function dessiner() {
     wrap.innerHTML = `
       ${tobiSVG("idle", 160)}
-      <h1>Mot de passe oublié</h1>
+      <h1>Code oublié</h1>
       ${envoye
-        ? `<p style="margin-top:8px">Si un compte existe avec cet e-mail, un lien de réinitialisation vient d'être envoyé. Vérifiez aussi vos spams.</p>
+        ? `<p style="margin-top:8px">${legacy
+              ? "Si un compte existe avec cet e-mail, un lien de réinitialisation vient d'être envoyé. Vérifiez aussi vos spams."
+              : "Si un e-mail de récupération est enregistré pour ce nom, un lien vient d'être envoyé (vérifiez aussi les spams). Sans e-mail de récupération, il faut créer un nouveau compte."}</p>
            <button class="btn" id="retour" style="margin-top:16px">Retour à la connexion</button>`
-        : `<p style="margin-top:8px">Entrez votre e-mail, on vous envoie un lien pour choisir un nouveau mot de passe.</p>
-           <input class="champ" id="email" type="email" placeholder="E-mail" style="margin-top:12px">
-           ${erreur ? `<p class="erreur">${erreur}</p>` : ""}
+        : `<p style="margin-top:8px">Entrez votre nom. Si vous avez donné un e-mail à l'inscription, on vous envoie un lien pour choisir un nouveau code. (Ancien compte : entrez votre e-mail.)</p>
+           <input class="champ" id="ident" placeholder="Votre nom ou e-mail" style="margin-top:12px">
+           ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}
            <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : "Envoyer le lien"}</button>
            <button class="btn-text" id="retour">Retour à la connexion</button>`
       }
@@ -622,14 +698,21 @@ function vueMotDePasseOublie() {
     wrap.querySelector("#retour").onclick = () => router("connexion");
     const go = wrap.querySelector("#go");
     if (go) go.onclick = async () => {
-      const email = wrap.querySelector("#email").value.trim();
-      if (!email.includes("@")) { erreur = "Entrez une adresse e-mail valide"; dessiner(); return; }
+      const ident = wrap.querySelector("#ident").value.trim();
+      if (ident.length < 3) { erreur = "Entrez votre nom ou votre e-mail"; dessiner(); return; }
       enCours = true; erreur = ""; dessiner();
       try {
-        await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+        const redirect = location.origin + location.pathname;
+        if (ident.includes("@")) {
+          legacy = true;
+          await sb.auth.resetPasswordForEmail(ident, { redirectTo: redirect });
+        } else {
+          legacy = false;
+          await appelAuth({ action: "oublie", nom: ident, redirect });
+        }
         envoye = true;
       } catch(e) {
-        erreur = (e && e.message) ? e.message : "Envoi impossible, réessayez.";
+        erreur = messageErreur(e, "Envoi impossible, réessayez.");
       }
       enCours = false; dessiner();
     };
@@ -639,33 +722,44 @@ function vueMotDePasseOublie() {
 }
 
 function vueNouveauMotDePasse() {
+  const parCode = etat.compteNom;
   let erreur = "", enCours = false;
   const wrap = document.createElement("div");
   wrap.className = "ecran centre";
   function dessiner() {
     wrap.innerHTML = `
       ${tobiSVG("idle", 160)}
-      <h1>Choisissez un nouveau mot de passe</h1>
-      <input class="champ" id="mdp" type="password" placeholder="Nouveau mot de passe (6 caractères min.)" style="margin-top:12px">
-      <input class="champ" id="mdp2" type="password" placeholder="Confirmez le mot de passe">
-      ${erreur ? `<p class="erreur">${erreur}</p>` : ""}
+      <h1>${parCode ? "Choisissez un nouveau code" : "Choisissez un nouveau mot de passe"}</h1>
+      ${parCode
+        ? `<input class="champ" id="mdp" type="password" inputmode="numeric" maxlength="${LONG_CODE}" autocomplete="off" placeholder="Nouveau code à 6 chiffres" style="margin-top:12px">
+           <input class="champ" id="mdp2" type="password" inputmode="numeric" maxlength="${LONG_CODE}" autocomplete="off" placeholder="Confirmez le code">`
+        : `<input class="champ" id="mdp" type="password" placeholder="Nouveau mot de passe (6 caractères min.)" style="margin-top:12px">
+           <input class="champ" id="mdp2" type="password" placeholder="Confirmez le mot de passe">`}
+      ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}
       <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : "Enregistrer"}</button>
     `;
     wrap.querySelector("#go").onclick = async () => {
       const mdp = wrap.querySelector("#mdp").value;
       const mdp2 = wrap.querySelector("#mdp2").value;
-      if (mdp.length < 6) { erreur = "Le mot de passe doit faire au moins 6 caractères"; dessiner(); return; }
-      if (mdp !== mdp2) { erreur = "Les deux mots de passe ne correspondent pas"; dessiner(); return; }
+      if (parCode) {
+        if (!/^\d{6}$/.test(mdp)) { erreur = "Le code doit faire exactement 6 chiffres"; dessiner(); return; }
+        if (codeTropFacile(mdp)) { erreur = "Ce code est trop facile à deviner. Choisissez-en un autre."; dessiner(); return; }
+        if (mdp !== mdp2) { erreur = "Les deux codes sont différents"; dessiner(); return; }
+      } else {
+        if (mdp.length < 6) { erreur = "Le mot de passe doit faire au moins 6 caractères"; dessiner(); return; }
+        if (mdp !== mdp2) { erreur = "Les deux mots de passe ne correspondent pas"; dessiner(); return; }
+      }
       enCours = true; erreur = ""; dessiner();
       try {
         const { data, error } = await sb.auth.updateUser({ password: mdp });
         if (error) throw error;
         etat.parentId = data.user.id;
+        if (parCode && PIN.dispo) await PIN.definir(etat.parentId, mdp);
         await chargerReferentiel();
         router(routeApresConnexion());
         return;
       } catch(e) {
-        erreur = (e && e.message) ? e.message : "Impossible d'enregistrer le mot de passe.";
+        erreur = messageErreur(e, "Impossible d'enregistrer.");
       }
       enCours = false; dessiner();
     };
@@ -817,8 +911,8 @@ function vueParametres() {
       <div class="carte" id="opt-clavier" style="margin-top:10px;cursor:pointer;display:flex;gap:10px;align-items:center">
         <input type="radio" ${mode === "clavier" ? "checked" : ""}><div><b>Le clavier</b></div>
       </div>
-      <div class="carte" id="opt-pin" style="margin-top:20px;cursor:pointer">🔒 Changer le code PIN</div>
-      <div class="carte" id="opt-mdp" style="margin-top:10px;cursor:pointer">🔑 Changer le mot de passe</div>
+      <div class="carte" id="opt-pin" style="margin-top:20px;cursor:pointer">🔒 ${etat.compteNom ? "Changer mon code" : "Changer le code de verrouillage"}</div>
+      ${etat.compteNom ? "" : `<div class="carte" id="opt-mdp" style="margin-top:10px;cursor:pointer">🔑 Changer le mot de passe</div>`}
       <div class="carte" id="opt-deco" style="margin-top:10px;cursor:pointer">🚪 Se déconnecter</div>
       <button class="btn" id="retour" style="margin-top:20px">Retour</button>
     `;
@@ -826,7 +920,8 @@ function vueParametres() {
     wrap.querySelector("#opt-deco").onclick = () => { if (confirm("Se déconnecter ? Il faudra vous reconnecter avec votre e-mail.")) deconnecter(); };
     wrap.querySelector("#opt-ardoise").onclick = () => { mode = "ardoise"; sauverLocal("mode_ecriture", mode); dessiner(); };
     wrap.querySelector("#opt-clavier").onclick = () => { mode = "clavier"; sauverLocal("mode_ecriture", mode); dessiner(); };
-    wrap.querySelector("#opt-mdp").onclick = () => router("changer-mot-de-passe");
+    const optMdp = wrap.querySelector("#opt-mdp");
+    if (optMdp) optMdp.onclick = () => router("changer-mot-de-passe");
     wrap.querySelector("#retour").onclick = () => router("accueil");
   }
   dessiner();
