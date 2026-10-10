@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Tobi — Répétiteur</title>
+<title>Tobi</title>
 <link rel="icon" href="data:,">
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 :root {
@@ -99,6 +100,37 @@ p { margin: 0; color: var(--texte-doux); font-size: 14px; }
 :root[data-theme="dark"] {
   --fond: #1C1B18; --surface: #2A2823; --texte: #F0ECE3; --texte-doux: #A69E8E; --bordure: #3D3A33;
 }
+
+#app { padding-bottom: 0; }
+.nav-bas { position: sticky; bottom: 0; display: flex; background: var(--surface); border-top: 1px solid var(--bordure); padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
+.nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; font-size: 12px; color: var(--texte-doux); font-weight: 600; }
+.nav-btn .ic { font-size: 22px; }
+.nav-btn.actif { color: var(--rouge); }
+.pf-entete { display: flex; align-items: center; justify-content: space-between; }
+.liste-contenus { display: flex; flex-direction: column; gap: 10px; }
+.carte-contenu { display: flex; gap: 12px; background: var(--surface); border-radius: 14px; padding: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); cursor: pointer; }
+.vignette { position: relative; flex: 0 0 128px; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; background: var(--bordure); display: flex; align-items: center; justify-content: center; }
+.vignette img { width: 100%; height: 100%; object-fit: cover; }
+.vig-ic { font-size: 32px; }
+.vig-dur { position: absolute; right: 4px; bottom: 4px; background: rgba(0,0,0,.75); color: #fff; font-size: 11px; padding: 1px 5px; border-radius: 6px; }
+.carte-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12px; color: var(--texte-doux); }
+.carte-txt b { font-size: 15px; color: var(--texte); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.defil { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.defil .chip { white-space: nowrap; }
+.barre { height: 10px; background: var(--bordure); border-radius: 6px; overflow: hidden; }
+.barre i { display: block; height: 100%; width: 0; background: var(--vert); transition: width .2s; }
+.lecteur-video { width: 100%; max-height: 70vh; background: #000; border-radius: 12px; }
+.lecteur-audio, .lecteur-doc { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; background: var(--surface); border-radius: 12px; }
+.lecteur-audio img, .lecteur-doc img { max-width: 60%; border-radius: 10px; }
+.lecteur-audio audio { width: 100%; }
+.lecteur-image { width: 100%; border-radius: 12px; }
+.badge { display: inline-block; background: var(--bordure); color: var(--texte); font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 12px; }
+.desc { white-space: pre-wrap; word-break: break-word; font-size: 14px; }
+.ligne-menu { display: flex; gap: 10px; align-items: center; cursor: pointer; font-weight: 600; }
+.bloc-pub { display: flex; flex-direction: column; gap: 6px; }
+.actions-pub { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions-pub button { padding: 6px 12px; border-radius: 10px; background: var(--bordure); color: var(--texte); font-size: 13px; font-weight: 600; }
+textarea.champ { min-height: 90px; resize: vertical; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -192,8 +224,9 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const app = document.getElementById("app");
-let etat = { route: "connexion", parentId: null, enfant: null, niveaux: [], matieres: [], params: {}, compteNom: false };
+let etat = { route: "connexion", parentId: null, enfant: null, niveaux: [], matieres: [], params: {}, compteNom: false, profil: null, chaine: null, envoiEnCours: false, lienEnAttente: null };
 const LONG_CODE = 6;
+try { const m = /[#&]c=([0-9a-f-]{36})/i.exec(location.hash); if (m) etat.lienEnAttente = m[1]; } catch(e) {}
 
 function chargerLocal(cle, defaut) { try { const v = localStorage.getItem(cle); return v ? JSON.parse(v) : defaut; } catch(e) { return defaut; } }
 function sauverLocal(cle, val) { try { localStorage.setItem(cle, JSON.stringify(val)); } catch(e) {} }
@@ -229,9 +262,9 @@ async function ouvrirSession(sessionServeur, code) {
   if (error || !data.session) throw new Error("Connexion impossible, réessayez.");
   etat.parentId = data.session.user.id;
   etat.compteNom = true;
-  await chargerReferentiel();
+  await apresConnexion();
   if (PIN.dispo) await PIN.definir(etat.parentId, code);
-  router("choix-enfant");
+  router("home");
 }
 
 function messageErreur(e, defaut) {
@@ -268,6 +301,15 @@ function creerReconnaisseur() {
 }
 
 function router(route, params = {}) {
+  if (etat.envoiEnCours && etat.route === "publier" && route !== "publier") {
+    if (!confirm("Un envoi est en cours. Quitter l'annulera. Continuer ?")) return;
+    if (etat.annulerEnvoi) etat.annulerEnvoi();
+  }
+  if (route === "home" && etat.lienEnAttente) {
+    const id = etat.lienEnAttente; etat.lienEnAttente = null;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch(e) {}
+    route = "contenu"; params = { id };
+  }
   etat.route = route; etat.params = params;
   render();
 }
@@ -284,7 +326,7 @@ async function init() {
   if (session) {
     etat.parentId = session.user.id;
     etat.compteNom = estCompteNom(session.user);
-    await chargerReferentiel();
+    await apresConnexion();
     if (etat.compteNom && PIN.dispo && !PIN.existe(etat.parentId)) {
       await deconnecter("Reconnectez-vous avec votre nom et votre code.");
       return;
@@ -315,9 +357,13 @@ function render() {
     "accueil": vueAccueil, "lecons": vueLecons, "dialogue": vueDialogue, "parametres": vueParametres,
     "mot-de-passe-oublie": vueMotDePasseOublie, "nouveau-mot-de-passe": vueNouveauMotDePasse,
     "changer-mot-de-passe": vueChangerMotDePasse,
-    "pin-verrou": vuePinVerrou, "pin-creation": vuePinCreation, "arabe": vueArabe
+    "pin-verrou": vuePinVerrou, "pin-creation": vuePinCreation, "arabe": vueArabe,
+    "home": vueHome, "publier": vuePublier, "profil": vueProfil, "contenu": vueContenu,
+    "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
   };
   (vues[etat.route] || vueConnexion)();
+  if (["home", "publier", "profil", "contenu", "devenir-createur", "admin", "mes-contenus", "arabe"].includes(etat.route)) app.appendChild(creerNav());
+  window.scrollTo(0, 0);
 }
 
 function vueConnexion() {
@@ -369,7 +415,7 @@ function vueConnexion() {
           if (error) throw error;
           etat.parentId = data.user.id;
           etat.compteNom = estCompteNom(data.user);
-          await chargerReferentiel();
+          await apresConnexion();
           router(routeApresConnexion());
           return;
         } catch(e) { erreur = e instanceof TypeError ? "Pas de connexion internet." : "E-mail ou mot de passe incorrect."; }
@@ -429,7 +475,7 @@ function codeTropFacile(c) {
 }
 
 function routeApresConnexion() {
-  return PIN.dispo && !PIN.existe(etat.parentId) ? "pin-creation" : "choix-enfant";
+  return PIN.dispo && !PIN.existe(etat.parentId) ? "pin-creation" : "home";
 }
 
 async function deconnecter(message) {
@@ -480,7 +526,7 @@ function vuePinVerrou() {
   }
   const pad = clavierPin(async (pin) => {
     const r = await PIN.verifier(etat.parentId, pin);
-    if (r.ok) { router("choix-enfant"); return; }
+    if (r.ok) { router("home"); return; }
     if (r.restant <= 0) { await deconnecter("Trop d'essais. Reconnectez-vous avec votre e-mail."); return; }
     erreur = `Code incorrect. Il reste ${r.restant} essai${r.restant > 1 ? "s" : ""}.`;
     entete(); pad.reinit();
@@ -527,7 +573,7 @@ function vuePinCreation() {
           if (error) { erreur = "Impossible de changer le code, réessayez."; etape = "nouveau"; premier = ""; entete(); pad.reinit(); return; }
         }
         await PIN.definir(etat.parentId, pin);
-        router(changer ? "parametres" : "choix-enfant");
+        router(changer ? (etat.params.retour || "profil") : "home");
         return;
       }
       erreur = "Les deux codes sont différents. Recommencez."; etape = "nouveau"; premier = "";
@@ -539,11 +585,668 @@ function vuePinCreation() {
   if (changer) {
     const retour = document.createElement("button");
     retour.className = "btn-text"; retour.style.marginTop = "16px"; retour.textContent = "Annuler";
-    retour.onclick = () => router("parametres");
+    retour.onclick = () => router(etat.params.retour || "profil");
     wrap.appendChild(retour);
   }
   app.appendChild(wrap);
 }
+
+/* ====================== PLATEFORME DE CONTENUS ======================
+   Vidéos (jusqu'à 2 h), audios, images, PDF et livres.
+   - Lecture : tout compte connecté.
+   - Publication : créateurs vérifiés uniquement (droits appliqués côté base).
+   - Fichiers : espace Supabase « yt-media », envoi par morceaux (reprise automatique si le réseau coupe). */
+const APP_NOM = "Tobi";
+const REF_PROJET = SUPABASE_URL.replace("https://", "").split(".")[0];
+const DUREE_MAX = 7200; // 2 h
+const MO = 1024 ** 2, GO = 1024 ** 3;
+const TAILLE_MAX = { video: 4 * GO, audio: GO, image: 25 * MO, pdf: 300 * MO, livre: 300 * MO };
+const TYPES = {
+  video: { nom: "Vidéo", pl: "Vidéos", ic: "🎬", accept: "video/mp4,video/webm,video/quicktime,video/3gpp,.mp4,.m4v,.webm,.mov,.3gp" },
+  audio: { nom: "Audio", pl: "Audios", ic: "🎧", accept: "audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.amr" },
+  image: { nom: "Image", pl: "Images", ic: "🖼️", accept: "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" },
+  pdf: { nom: "PDF", pl: "PDF", ic: "📄", accept: "application/pdf,.pdf" },
+  livre: { nom: "Livre", pl: "Livres", ic: "📚", accept: "application/pdf,application/epub+zip,.pdf,.epub" }
+};
+const CATEGORIES = ["Cours", "Rappel", "Coran", "Conférence", "Éducation", "Enfants", "Autre"];
+const MIME_EXT = { mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", "3gp": "video/3gpp",
+  mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/opus", wav: "audio/wav", amr: "audio/amr",
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", pdf: "application/pdf", epub: "application/epub+zip" };
+const MIME_SYN = { "audio/mp3": "audio/mpeg", "audio/x-mpeg": "audio/mpeg", "audio/m4a": "audio/mp4", "audio/x-aac": "audio/aac",
+  "audio/wave": "audio/x-wav", "audio/vnd.wave": "audio/x-wav", "video/x-m4v": "video/mp4", "image/jpg": "image/jpeg" };
+const EXT_DE_MIME = { "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "video/3gpp": "3gp",
+  "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/ogg": "ogg", "audio/opus": "opus",
+  "audio/webm": "weba", "audio/wav": "wav", "audio/x-wav": "wav", "audio/3gpp": "3gp", "audio/amr": "amr",
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf", "application/epub+zip": "epub" };
+const CHAMPS_CONTENU = "id,title,description,category,type,fichier_path,cover_path,duration_seconds,views_count,published_at,status,auteur,taille_octets,mime,channel_id,yt_channels(id,name)";
+const LIBELLE_ROLE = { viewer: "Lecteur", creator_pending: "Demande de créateur en cours", creator_verified: "Créateur vérifié", admin: "Administrateur" };
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+function fmtDuree(s) {
+  if (s == null) return "";
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60, p = n => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(x)}` : `${m}:${p(x)}`;
+}
+function fmtTaille(o) {
+  if (o == null) return "";
+  if (o >= GO) return (o / GO).toFixed(1).replace(".", ",") + " Go";
+  if (o >= MO) return Math.round(o / MO) + " Mo";
+  return Math.max(1, Math.round(o / 1024)) + " Ko";
+}
+function urlMedia(chemin) { return sb.storage.from("yt-media").getPublicUrl(chemin).data.publicUrl; }
+function estCreateur() { return !!(etat.profil && (etat.profil.role === "creator_verified" || etat.profil.role === "admin")); }
+function erreurReseau(e) { return e instanceof TypeError || (e && /Failed to fetch|NetworkError|Load failed/i.test(e.message || "")); }
+
+async function chargerProfil() {
+  etat.profil = null; etat.chaine = null;
+  try {
+    await sb.rpc("yt_assurer_profil");
+    const { data: p } = await sb.from("yt_users").select("role,full_name").eq("id", etat.parentId).maybeSingle();
+    etat.profil = p || { role: "viewer", full_name: null };
+    if (estCreateur()) {
+      await sb.rpc("yt_ma_chaine");
+      const { data: ch } = await sb.from("yt_channels").select("id,name").eq("creator_id", etat.parentId).maybeSingle();
+      etat.chaine = ch || null;
+    }
+  } catch (e) {
+    if (!etat.profil) etat.profil = { role: "viewer", full_name: null };
+  }
+}
+async function apresConnexion() { await Promise.all([chargerReferentiel(), chargerProfil()]); }
+
+/* ---------- Navigation du bas ---------- */
+const NAV = [{ r: "home", i: "🏠", t: "Accueil" }, { r: "publier", i: "➕", t: "Publier" }, { r: "arabe", i: "🕌", t: "Arabe" }, { r: "profil", i: "👤", t: "Profil" }];
+const ONGLET_DE = { home: "home", contenu: "home", publier: "publier", "devenir-createur": "publier", arabe: "arabe", profil: "profil", admin: "profil", "mes-contenus": "profil" };
+function creerNav() {
+  const nav = document.createElement("nav");
+  nav.className = "nav-bas";
+  nav.setAttribute("aria-label", "Navigation");
+  const actif = ONGLET_DE[etat.route];
+  NAV.forEach(n => {
+    const b = document.createElement("button");
+    b.className = "nav-btn" + (n.r === actif ? " actif" : "");
+    b.innerHTML = `<span class="ic">${n.i}</span><span>${n.t}</span>`;
+    if (n.r === actif) b.setAttribute("aria-current", "page");
+    b.onclick = () => router(n.r);
+    nav.appendChild(b);
+  });
+  return nav;
+}
+
+/* ---------- Cartes et lecteur ---------- */
+function carteContenu(c, surClic) {
+  const t = TYPES[c.type] || TYPES.video;
+  const el = document.createElement("div");
+  el.className = "carte-contenu";
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  const vignette = c.cover_path ? urlMedia(c.cover_path) : "";
+  const chaine = c.yt_channels && c.yt_channels.name ? " · " + esc(c.yt_channels.name) : "";
+  el.innerHTML = `
+    <div class="vignette">${vignette ? `<img src="${esc(vignette)}" alt="" loading="lazy">` : `<span class="vig-ic">${t.ic}</span>`}
+      ${c.duration_seconds ? `<span class="vig-dur">${fmtDuree(c.duration_seconds)}</span>` : ""}</div>
+    <div class="carte-txt">
+      <b dir="auto">${esc(c.title)}</b>
+      <span>${t.ic} ${t.nom}${chaine}</span>
+      <span>${c.views_count || 0} vue${(c.views_count || 0) > 1 ? "s" : ""}${c.auteur ? " · " + esc(c.auteur) : ""}${c.status === "hidden" ? " · masqué" : ""}</span>
+    </div>`;
+  const ouvrir = surClic || (() => router("contenu", { id: c.id, c }));
+  el.onclick = ouvrir;
+  el.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ouvrir(); } };
+  return el;
+}
+
+async function chargerContenus({ type, categorie, q, depuis, nb }) {
+  let req = sb.from("yt_contenus").select(CHAMPS_CONTENU).eq("status", "published")
+    .order("published_at", { ascending: false }).range(depuis, depuis + nb - 1);
+  if (type) req = req.eq("type", type);
+  if (categorie) req = req.eq("category", categorie);
+  const mot = (q || "").replace(/[%,()*\\]/g, " ").trim();
+  if (mot) req = req.or(`title.ilike.%${mot}%,description.ilike.%${mot}%,auteur.ilike.%${mot}%`);
+  const { data, error } = await req;
+  if (error) throw error;
+  return data || [];
+}
+
+function vueHome() {
+  let type = "", categorie = "", q = "", total = 0, seq = 0, minuteur = null, enCours = false;
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `
+    <div class="pf-entete"><h1>${esc(APP_NOM)}</h1></div>
+    <input class="champ" id="q" type="search" placeholder="Rechercher un titre, un auteur…" style="margin:0" aria-label="Rechercher">
+    <div class="chips defil" id="types"></div>
+    <select class="champ" id="cat" style="margin:0" aria-label="Catégorie">
+      <option value="">Toutes les catégories</option>${CATEGORIES.map(c => `<option>${esc(c)}</option>`).join("")}
+    </select>
+    <div id="liste" class="liste-contenus"></div>
+    <p class="erreur" id="msg" hidden></p>
+    <button class="btn-outline" id="plus" hidden>Voir plus</button>`;
+  app.appendChild(wrap);
+  const zoneTypes = wrap.querySelector("#types");
+  function puces() {
+    zoneTypes.innerHTML = "";
+    [["", "Tout"], ...Object.entries(TYPES).map(([k, v]) => [k, `${v.ic} ${v.pl}`])].forEach(([k, nom]) => {
+      const b = document.createElement("button");
+      b.className = "chip" + (k === type ? " actif" : "");
+      b.textContent = nom;
+      b.onclick = () => { type = k; puces(); charger(true); };
+      zoneTypes.appendChild(b);
+    });
+  }
+  async function charger(reset) {
+    if (!reset && enCours) return;
+    const mon = ++seq;
+    enCours = true;
+    const zone = wrap.querySelector("#liste"), msg = wrap.querySelector("#msg"), plus = wrap.querySelector("#plus");
+    msg.hidden = true;
+    if (reset) { total = 0; zone.innerHTML = `<div class="centre"><div class="spinner"></div></div>`; plus.hidden = true; }
+    let fini = false;
+    try {
+      const lot = await chargerContenus({ type, categorie, q, depuis: total, nb: 20 });
+      if (mon !== seq || !wrap.isConnected) return;
+      if (reset) zone.innerHTML = "";
+      lot.forEach(c => zone.appendChild(carteContenu(c)));
+      total += lot.length;
+      fini = lot.length < 20;
+      if (!total) zone.innerHTML = `<div class="centre">${tobiSVG("encourage", 120)}<p style="margin-top:8px">${q || type || categorie ? "Aucun résultat." : "Rien n'a encore été publié."}</p></div>`;
+    } catch (e) {
+      if (mon !== seq || !wrap.isConnected) return;
+      if (reset) zone.innerHTML = "";
+      msg.textContent = erreurReseau(e) ? "Pas de connexion internet." : "Impossible de charger les contenus.";
+      msg.hidden = false;
+    }
+    plus.hidden = fini || !total;
+    enCours = false;
+  }
+  wrap.querySelector("#q").oninput = ev => { q = ev.target.value; clearTimeout(minuteur); minuteur = setTimeout(() => charger(true), 350); };
+  wrap.querySelector("#cat").onchange = ev => { categorie = ev.target.value; charger(true); };
+  wrap.querySelector("#plus").onclick = () => charger(false);
+  puces();
+  charger(true);
+}
+
+function lecteurHTML(c) {
+  const url = urlMedia(c.fichier_path), cover = c.cover_path ? urlMedia(c.cover_path) : "";
+  const t = TYPES[c.type] || TYPES.video;
+  if (c.type === "video") return `<video id="media" class="lecteur-video" controls playsinline preload="metadata" ${cover ? `poster="${esc(cover)}"` : ""} src="${esc(url)}"></video>`;
+  if (c.type === "audio") return `<div class="lecteur-audio">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="vig-ic" style="font-size:64px">🎧</span>`}<audio id="media" controls preload="metadata" src="${esc(url)}"></audio></div>`;
+  if (c.type === "image") return `<a href="${esc(url)}" target="_blank" rel="noopener"><img class="lecteur-image" src="${esc(url)}" alt="${esc(c.title)}"></a>`;
+  return `<div class="lecteur-doc">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="vig-ic" style="font-size:64px">${t.ic}</span>`}
+    <a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(url)}" target="_blank" rel="noopener">${c.mime === "application/epub+zip" ? "Télécharger le livre" : "Ouvrir"}</a></div>`;
+}
+
+async function vueContenu() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="entete" style="padding:0"><button class="btn-text" id="retour" style="padding:4px" aria-label="Retour">←</button></div><div class="centre"><div class="spinner"></div></div>`;
+  app.appendChild(wrap);
+  wrap.querySelector("#retour").onclick = () => router("home");
+  let c = etat.params.c;
+  try {
+    if (!c) {
+      const { data, error } = await sb.from("yt_contenus").select(CHAMPS_CONTENU).eq("id", etat.params.id).maybeSingle();
+      if (error) throw error;
+      c = data;
+    }
+  } catch (e) {
+    if (!wrap.isConnected) return;
+    wrap.querySelector(".spinner").parentElement.innerHTML = `<p class="erreur">${erreurReseau(e) ? "Pas de connexion internet." : "Impossible de charger ce contenu."}</p>`;
+    return;
+  }
+  if (!wrap.isConnected) return;
+  if (!c) { wrap.querySelector(".spinner").parentElement.innerHTML = `<p>Ce contenu n'existe pas ou a été retiré.</p>`; return; }
+  const t = TYPES[c.type] || TYPES.video;
+  const chaine = c.yt_channels && c.yt_channels.name ? esc(c.yt_channels.name) : "";
+  wrap.innerHTML = `
+    <div class="entete" style="padding:0"><button class="btn-text" id="retour" style="padding:4px" aria-label="Retour">←</button></div>
+    ${lecteurHTML(c)}
+    <h1 dir="auto" style="margin-top:6px">${esc(c.title)}</h1>
+    <p>${t.ic} ${t.nom}${c.category ? " · " + esc(c.category) : ""}${chaine ? " · " + chaine : ""}</p>
+    <p>${c.views_count || 0} vue${(c.views_count || 0) > 1 ? "s" : ""}${c.duration_seconds ? " · " + fmtDuree(c.duration_seconds) : ""}${c.taille_octets ? " · " + fmtTaille(c.taille_octets) : ""}${c.auteur ? " · Auteur : " + esc(c.auteur) : ""}</p>
+    ${c.description ? `<div class="desc" dir="auto">${esc(c.description)}</div>` : ""}
+    <button class="btn-outline" id="partager">🔗 Partager</button>`;
+  wrap.querySelector("#retour").onclick = () => router("home");
+  const lien = location.origin + location.pathname + "#c=" + c.id;
+  const bp = wrap.querySelector("#partager");
+  bp.onclick = async () => {
+    try {
+      if (navigator.share) await navigator.share({ title: c.title, url: lien });
+      else { await navigator.clipboard.writeText(lien); bp.textContent = "Lien copié ✓"; }
+    } catch (e) { /* partage annulé */ }
+  };
+  try {
+    const cle = "vu_" + c.id;
+    if (!sessionStorage.getItem(cle)) { sessionStorage.setItem(cle, "1"); sb.rpc("yt_vue", { p_id: c.id }).then(() => {}, () => {}); }
+  } catch (e) { /* compteur de vues facultatif */ }
+  const media = wrap.querySelector("#media");
+  if (media) {
+    const clePos = "pos_" + c.id;
+    media.addEventListener("loadedmetadata", () => {
+      const p = chargerLocal(clePos, 0);
+      if (p > 10 && media.duration && p < media.duration - 15) { try { media.currentTime = p; } catch (e) {} }
+    });
+    let dernier = 0;
+    media.addEventListener("timeupdate", () => { if (Date.now() - dernier > 5000) { dernier = Date.now(); sauverLocal(clePos, Math.floor(media.currentTime)); } });
+    media.addEventListener("ended", () => sauverLocal(clePos, 0));
+  }
+}
+
+/* ---------- Publication (créateurs vérifiés) ---------- */
+function chargerImage(blob) {
+  return new Promise((ok, ko) => {
+    const u = URL.createObjectURL(blob), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(u); ok(im); };
+    im.onerror = () => { URL.revokeObjectURL(u); ko(new Error("Image illisible.")); };
+    im.src = u;
+  });
+}
+function versJpeg(source, w, h, max) {
+  const r = Math.min(1, max / Math.max(w, h)), cw = Math.max(1, Math.round(w * r)), ch = Math.max(1, Math.round(h * r));
+  const cv = document.createElement("canvas");
+  cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(source, 0, 0, cw, ch);
+  return new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error("Conversion impossible.")), "image/jpeg", 0.82));
+}
+async function reduireImage(blob, max = 640) {
+  const im = await chargerImage(blob);
+  return versJpeg(im, im.naturalWidth, im.naturalHeight, max);
+}
+function lireMeta(f, type) {
+  return new Promise((ok, ko) => {
+    if (type === "pdf" || type === "livre") return ok({ duree: null, vignette: null });
+    if (type === "image") return reduireImage(f).then(b => ok({ duree: null, vignette: b }), () => ko(new Error("Image illisible.")));
+    const url = URL.createObjectURL(f), el = document.createElement(type === "video" ? "video" : "audio");
+    let fini = false;
+    const clore = (fn, v) => { if (fini) return; fini = true; clearTimeout(tLecture); clearTimeout(tCapture); URL.revokeObjectURL(url); el.removeAttribute("src"); el.load(); fn(v); };
+    const tLecture = setTimeout(() => clore(ko, new Error("Impossible de lire ce fichier (format non reconnu).")), 25000);
+    let tCapture = null;
+    el.preload = "metadata"; el.muted = true; el.playsInline = true;
+    el.onerror = () => clore(ko, new Error("Format non reconnu. Utilisez MP4 (vidéo) ou MP3 / M4A (audio)."));
+    el.onloadedmetadata = () => {
+      const d = el.duration;
+      if (!isFinite(d) || d <= 0) return clore(ko, new Error("Durée illisible : réenregistrez le fichier en MP4 ou MP3."));
+      if (type === "audio") return clore(ok, { duree: d, vignette: null });
+      clearTimeout(tLecture);
+      tCapture = setTimeout(() => clore(ok, { duree: d, vignette: null }), 6000);
+      el.onseeked = () => {
+        const w = el.videoWidth, h = el.videoHeight;
+        if (!w || !h) return clore(ok, { duree: d, vignette: null });
+        versJpeg(el, w, h, 640).then(b => clore(ok, { duree: d, vignette: b }), () => clore(ok, { duree: d, vignette: null }));
+      };
+      try { el.currentTime = Math.min(Math.max(d * 0.1, 0.5), 10, Math.max(d - 0.1, 0)); } catch (e) { clore(ok, { duree: d, vignette: null }); }
+    };
+    el.src = url;
+  });
+}
+function mimeDe(f, type) {
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  let m = (f.type || "").toLowerCase();
+  if (!m || m === "application/octet-stream") m = MIME_EXT[ext] || "";
+  m = MIME_SYN[m] || m;
+  if (ext === "3gp" && type === "audio") m = "audio/3gpp";
+  return m;
+}
+function mimeCoherent(m, type) {
+  if (!EXT_DE_MIME[m]) return false;
+  if (type === "video") return m.startsWith("video/");
+  if (type === "audio") return m.startsWith("audio/");
+  if (type === "image") return m.startsWith("image/");
+  if (type === "pdf") return m === "application/pdf";
+  return m === "application/pdf" || m === "application/epub+zip";
+}
+let verrouEcran = null;
+async function garderEveille(oui) {
+  try {
+    if (oui && navigator.wakeLock) verrouEcran = await navigator.wakeLock.request("screen");
+    else if (!oui && verrouEcran) { await verrouEcran.release(); verrouEcran = null; }
+  } catch (e) { /* facultatif */ }
+}
+function envoyerFichier(fichier, chemin, mime, surProgres) {
+  let upload = null, rejeter = null;
+  const promesse = new Promise(async (ok, ko) => {
+    rejeter = ko;
+    try {
+      if (!window.tus) {
+        if (fichier.size > 50 * MO) throw new Error("L'outil d'envoi n'a pas pu se charger. Vérifiez la connexion et rechargez la page.");
+        const { error } = await sb.storage.from("yt-media").upload(chemin, fichier, { contentType: mime, upsert: false });
+        if (error) throw error;
+        surProgres(fichier.size, fichier.size);
+        return ok();
+      }
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) throw new Error("Session expirée : reconnectez-vous.");
+      upload = new tus.Upload(fichier, {
+        endpoint: `https://${REF_PROJET}.storage.supabase.co/storage/v1/upload/resumable`,
+        retryDelays: [0, 3000, 5000, 10000, 20000, 30000, 60000],
+        headers: { authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        storeFingerprintForResuming: false,
+        metadata: { bucketName: "yt-media", objectName: chemin, contentType: mime, cacheControl: "31536000" },
+        chunkSize: 6 * MO,
+        onBeforeRequest: async req => { const { data: { session: s } } = await sb.auth.getSession(); if (s) req.setHeader("authorization", `Bearer ${s.access_token}`); },
+        onError: e => ko(e),
+        onProgress: (a, b) => surProgres(a, b),
+        onSuccess: () => ok()
+      });
+      upload.start();
+    } catch (e) { ko(e); }
+  });
+  return { promesse, annuler: () => { try { if (upload) upload.abort(true); } catch (e) {} if (rejeter) rejeter(new Error("Envoi annulé.")); } };
+}
+function messageEnvoi(e) {
+  const m = String((e && (e.message || e.error)) || e || "");
+  if (/annulé/i.test(m)) return "Envoi annulé.";
+  if (/413|maximum allowed size|exceeded|too large|Payload/i.test(m)) return "Fichier trop gros pour l'espace de stockage actuel. Sur l'offre gratuite de Supabase la limite est de 50 Mo : passez à l'offre Pro et augmentez « Global file size limit » dans les réglages de stockage.";
+  if (/403|401|unauthor|row-level|policy|violates/i.test(m)) return "Vous n'avez pas le droit de publier. Votre compte créateur est-il bien validé ?";
+  if (/415|mime|not supported|invalid_mime/i.test(m)) return "Format de fichier non accepté.";
+  if (erreurReseau(e)) return "Connexion perdue. Vérifiez votre réseau et réessayez.";
+  return "L'envoi a échoué. Réessayez.";
+}
+
+function vuePublier() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  if (!etat.chaine) {
+    const w = document.createElement("div");
+    w.className = "ecran centre";
+    w.innerHTML = `${tobiSVG("encourage", 130)}<h1>Chaîne introuvable</h1><p>Reconnectez-vous pour préparer votre chaîne.</p>`;
+    app.appendChild(w);
+    return;
+  }
+  let type = "video", fichier = null, mime = "", meta = null, cover = null, lecture = false, erreur = "", info = "";
+  const champs = { titre: "", desc: "", cat: "Cours", auteur: "" };
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  app.appendChild(wrap);
+
+  function lire() { Object.keys(champs).forEach(k => { const el = wrap.querySelector("#" + k); if (el) champs[k] = el.value; }); }
+  function dessiner() {
+    const t = TYPES[type];
+    wrap.innerHTML = `
+      <h1>Publier</h1>
+      <p>Chaîne : <b dir="auto">${esc(etat.chaine.name)}</b></p>
+      <div class="chips defil" id="types"></div>
+      <button class="btn-outline" id="choisir">${fichier ? "Changer le fichier" : `Choisir ${type === "image" ? "une" : "un"} ${t.nom.toLowerCase()}`}</button>
+      <input type="file" id="fichier" accept="${esc(t.accept)}" hidden>
+      ${lecture ? `<p><span class="spinner" style="display:inline-block;vertical-align:middle"></span> Lecture du fichier…</p>` : ""}
+      ${fichier && !lecture ? `<div class="carte" style="font-size:13px"><b dir="auto">${esc(fichier.name)}</b><br>${fmtTaille(fichier.size)}${meta && meta.duree ? " · " + fmtDuree(meta.duree) : ""}${meta && meta.vignette ? " · aperçu prêt" : ""}</div>` : ""}
+      <input class="champ" id="titre" maxlength="150" placeholder="Titre" style="margin:0" dir="auto">
+      <textarea class="champ" id="desc" maxlength="5000" placeholder="Description (facultatif)" style="margin:0" dir="auto"></textarea>
+      <select class="champ" id="cat" style="margin:0" aria-label="Catégorie">${CATEGORIES.map(c => `<option ${c === champs.cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      ${type === "livre" ? `<input class="champ" id="auteur" maxlength="120" placeholder="Auteur du livre" style="margin:0" dir="auto">` : ""}
+      ${["audio", "pdf", "livre"].includes(type) ? `<label style="font-size:13px;color:var(--texte-doux)">Image de couverture (facultatif)<input type="file" id="cover" accept="image/jpeg,image/png,image/webp" style="display:block;margin-top:4px"></label>` : ""}
+      ${info ? `<p>${esc(info)}</p>` : ""}
+      ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}
+      <button class="btn" id="go" ${!fichier || lecture ? "disabled" : ""}>Publier</button>
+      <p style="font-size:12px">Durée maximale : 2 h pour une vidéo ou un audio. Gardez l'écran allumé pendant l'envoi.</p>`;
+    ["titre", "desc", "auteur"].forEach(k => { const el = wrap.querySelector("#" + k); if (el) el.value = champs[k === "titre" ? "titre" : k]; });
+    const zt = wrap.querySelector("#types");
+    Object.entries(TYPES).forEach(([k, v]) => {
+      const b = document.createElement("button");
+      b.className = "chip" + (k === type ? " actif" : "");
+      b.textContent = `${v.ic} ${v.nom}`;
+      b.onclick = () => { lire(); type = k; fichier = null; meta = null; cover = null; erreur = ""; info = ""; dessiner(); };
+      zt.appendChild(b);
+    });
+    const input = wrap.querySelector("#fichier");
+    wrap.querySelector("#choisir").onclick = () => input.click();
+    input.onchange = () => { if (input.files[0]) choisir(input.files[0]); };
+    const ci = wrap.querySelector("#cover");
+    if (ci) ci.onchange = () => {
+      const f = ci.files[0];
+      cover = null;
+      if (f && f.size > 10 * MO) { erreur = "La couverture doit faire moins de 10 Mo."; ci.value = ""; return; }
+      cover = f || null;
+    };
+    wrap.querySelector("#go").onclick = publier;
+  }
+  async function choisir(f) {
+    lire();
+    erreur = ""; info = "";
+    const m = mimeDe(f, type);
+    if (!mimeCoherent(m, type)) { fichier = null; meta = null; erreur = `Ce fichier n'est pas ${type === "image" ? "une" : "un"} ${TYPES[type].nom.toLowerCase()} accepté${type === "image" ? "e" : ""}.`; dessiner(); return; }
+    if (f.size > TAILLE_MAX[type]) { fichier = null; meta = null; erreur = `Fichier trop gros (maximum ${fmtTaille(TAILLE_MAX[type])}).`; dessiner(); return; }
+    fichier = f; mime = m; meta = null; lecture = true; dessiner();
+    try {
+      meta = await lireMeta(f, type);
+      if (meta.duree && meta.duree > DUREE_MAX) { erreur = `Ce fichier dure ${fmtDuree(meta.duree)} : la limite est de 2 h (${fmtDuree(DUREE_MAX)}).`; fichier = null; meta = null; }
+      else if (!champs.titre) champs.titre = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").slice(0, 150);
+    } catch (e) { fichier = null; meta = null; erreur = e.message || "Fichier illisible."; }
+    lecture = false;
+    if (wrap.isConnected) dessiner();
+  }
+  async function publier() {
+    lire();
+    const titre = champs.titre.trim();
+    if (!fichier) return;
+    if (!titre) { erreur = "Donnez un titre à votre publication."; dessiner(); return; }
+    erreur = "";
+    const uid = etat.parentId, idc = uuid();
+    const chemin = `${uid}/${idc}.${EXT_DE_MIME[mime]}`;
+    const cheminCover = `${uid}/${idc}-cover.jpg`;
+    let coverEnvoyee = false, envoi = null, annule = false;
+    wrap.innerHTML = `
+      <h1>Envoi en cours…</h1>
+      <p dir="auto"><b>${esc(titre)}</b></p>
+      <div class="barre" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="barre"></i></div>
+      <p id="pct">0 %</p>
+      <p style="font-size:12px">Gardez cet écran ouvert et allumé. Si le réseau coupe, l'envoi reprend tout seul.</p>
+      <button class="btn-outline" id="annuler">Annuler l'envoi</button>`;
+    const barre = wrap.querySelector("#barre"), pct = wrap.querySelector("#pct");
+    etat.envoiEnCours = true;
+    window.onbeforeunload = () => true;
+    garderEveille(true);
+    const arreter = () => { etat.envoiEnCours = false; etat.annulerEnvoi = null; window.onbeforeunload = null; garderEveille(false); };
+    etat.annulerEnvoi = () => { annule = true; if (envoi) envoi.annuler(); arreter(); };
+    wrap.querySelector("#annuler").onclick = () => { etat.annulerEnvoi(); erreur = "Envoi annulé."; dessiner(); };
+    try {
+      envoi = envoyerFichier(fichier, chemin, mime, (a, b) => {
+        const p = b ? Math.min(100, Math.floor(a * 100 / b)) : 0;
+        if (barre.isConnected) { barre.style.width = p + "%"; pct.textContent = `${p} % · ${fmtTaille(a)} / ${fmtTaille(b)}`; }
+      });
+      await envoi.promesse;
+      const imageCover = cover ? await reduireImage(cover).catch(() => null) : (meta && meta.vignette);
+      if (imageCover) {
+        const r = await sb.storage.from("yt-media").upload(cheminCover, imageCover, { contentType: "image/jpeg", upsert: false });
+        coverEnvoyee = !r.error;
+      }
+      const ligne = {
+        channel_id: etat.chaine.id, title: titre, description: champs.desc.trim() || null, category: champs.cat || "Autre", type,
+        fichier_path: chemin, cover_path: coverEnvoyee ? cheminCover : null,
+        duration_seconds: meta && meta.duree ? Math.round(meta.duree) : null,
+        auteur: type === "livre" ? (champs.auteur.trim() || null) : null,
+        taille_octets: fichier.size, mime, status: "published", published_at: new Date().toISOString()
+      };
+      const { data, error } = await sb.from("yt_contenus").insert(ligne).select(CHAMPS_CONTENU).single();
+      if (error) {
+        await sb.storage.from("yt-media").remove([chemin, ...(coverEnvoyee ? [cheminCover] : [])]).catch(() => {});
+        throw error;
+      }
+      arreter();
+      wrap.innerHTML = `<div class="centre">${tobiSVG("celebre", 130)}<h1>Publié !</h1><p style="margin-top:6px" dir="auto">${esc(titre)} est en ligne.</p></div>
+        <button class="btn" id="voir">Voir la publication</button>
+        <button class="btn-outline" id="autre">Publier autre chose</button>`;
+      wrap.querySelector("#voir").onclick = () => router("contenu", { id: data.id, c: data });
+      wrap.querySelector("#autre").onclick = () => router("publier");
+    } catch (e) {
+      arreter();
+      if (annule) return;
+      sb.storage.from("yt-media").remove([chemin]).catch(() => {});
+      erreur = messageEnvoi(e);
+      if (wrap.isConnected) dessiner();
+    }
+  }
+  dessiner();
+}
+
+/* ---------- Devenir créateur / administration / mes publications ---------- */
+async function vueDevenirCreateur() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="centre"><div class="spinner"></div></div>`;
+  app.appendChild(wrap);
+  const role = etat.profil && etat.profil.role;
+  let refusee = false;
+  if (role === "viewer") {
+    try {
+      const { data } = await sb.from("yt_creator_verifications").select("status").eq("user_id", etat.parentId).order("created_at", { ascending: false }).limit(1);
+      refusee = !!(data && data[0] && data[0].status === "rejected");
+    } catch (e) { /* information facultative */ }
+  }
+  if (!wrap.isConnected) return;
+  if (role === "creator_pending") {
+    wrap.innerHTML = `<div class="centre">${tobiSVG("idle", 130)}<h1>Demande en cours</h1><p style="margin-top:8px">Votre demande pour devenir créateur est en cours d'examen. Vous pourrez publier dès qu'elle sera acceptée.</p></div>`;
+    return;
+  }
+  let erreur = "", enCours = false;
+  const v = { nom: "", msg: "" };
+  function dessiner() {
+    wrap.innerHTML = `
+      <div class="centre">${tobiSVG("explique", 120)}<h1>Devenir créateur</h1></div>
+      <p>Les créateurs vérifiés peuvent publier des vidéos (jusqu'à 2 h), audios, images, PDF et livres. Chaque demande est examinée avant d'être acceptée.</p>
+      ${refusee ? `<p class="erreur">Votre précédente demande a été refusée. Vous pouvez en envoyer une nouvelle.</p>` : ""}
+      <input class="champ" id="nom" maxlength="40" placeholder="Nom de votre chaîne (3 à 40 caractères)" dir="auto" style="margin:0">
+      <textarea class="champ" id="msg" maxlength="500" placeholder="Qui êtes-vous et que voulez-vous publier ?" dir="auto" style="margin:0"></textarea>
+      ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}
+      <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : "Envoyer ma demande"}</button>`;
+    wrap.querySelector("#nom").value = v.nom;
+    wrap.querySelector("#msg").value = v.msg;
+    wrap.querySelector("#go").onclick = async () => {
+      v.nom = wrap.querySelector("#nom").value.trim(); v.msg = wrap.querySelector("#msg").value.trim();
+      if (v.nom.length < 3) { erreur = "Le nom de la chaîne doit faire au moins 3 caractères."; dessiner(); return; }
+      enCours = true; erreur = ""; dessiner();
+      try {
+        const { error } = await sb.rpc("yt_demander_createur", { p_nom_chaine: v.nom, p_message: v.msg || null });
+        if (error) throw error;
+        await chargerProfil();
+        router("devenir-createur");
+        return;
+      } catch (e) { erreur = erreurReseau(e) ? "Pas de connexion internet." : (e.message || "Envoi impossible."); }
+      enCours = false; dessiner();
+    };
+  }
+  dessiner();
+}
+
+async function vueAdmin() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="entete" style="padding:0"><button class="btn-text" id="retour" style="padding:4px" aria-label="Retour">←</button><h1>Demandes de créateurs</h1></div><div id="liste" class="liste-contenus"><div class="centre"><div class="spinner"></div></div></div>`;
+  app.appendChild(wrap);
+  wrap.querySelector("#retour").onclick = () => router("profil");
+  const zone = wrap.querySelector("#liste");
+  try {
+    const { data, error } = await sb.rpc("yt_demandes_en_attente");
+    if (error) throw error;
+    if (!wrap.isConnected) return;
+    zone.innerHTML = "";
+    if (!data || !data.length) { zone.innerHTML = `<p>Aucune demande en attente.</p>`; return; }
+    data.forEach(d => {
+      const c = document.createElement("div");
+      c.className = "carte";
+      c.innerHTML = `<b dir="auto">${esc(d.nom_chaine || "—")}</b><p>Compte : ${esc(d.nom || "—")} · ${new Date(d.cree_le).toLocaleDateString("fr-FR")}</p>
+        ${d.message ? `<div class="desc" dir="auto" style="margin-top:6px">${esc(d.message)}</div>` : ""}
+        <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" data-ok="1">Accepter</button><button class="btn-outline" data-ok="0">Refuser</button></div>`;
+      c.querySelectorAll("button").forEach(b => b.onclick = async () => {
+        c.querySelectorAll("button").forEach(x => x.disabled = true);
+        try {
+          const r = await sb.rpc("yt_decider_createur", { p_user: d.user_id, p_accepter: b.dataset.ok === "1" });
+          if (r.error) throw r.error;
+          c.remove();
+          if (!zone.children.length) zone.innerHTML = `<p>Aucune demande en attente.</p>`;
+        } catch (e) { c.querySelectorAll("button").forEach(x => x.disabled = false); alert(erreurReseau(e) ? "Pas de connexion internet." : (e.message || "Action impossible.")); }
+      });
+      zone.appendChild(c);
+    });
+  } catch (e) {
+    if (wrap.isConnected) zone.innerHTML = `<p class="erreur">${erreurReseau(e) ? "Pas de connexion internet." : esc(e.message || "Chargement impossible.")}</p>`;
+  }
+}
+
+async function vueMesContenus() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="entete" style="padding:0"><button class="btn-text" id="retour" style="padding:4px" aria-label="Retour">←</button><h1>Mes publications</h1></div><div id="liste" class="liste-contenus"><div class="centre"><div class="spinner"></div></div></div>`;
+  app.appendChild(wrap);
+  wrap.querySelector("#retour").onclick = () => router("profil");
+  const zone = wrap.querySelector("#liste");
+  if (!etat.chaine) { zone.innerHTML = `<p>Aucune chaîne.</p>`; return; }
+  try {
+    const { data, error } = await sb.from("yt_contenus").select(CHAMPS_CONTENU).eq("channel_id", etat.chaine.id).order("published_at", { ascending: false, nullsFirst: false });
+    if (error) throw error;
+    if (!wrap.isConnected) return;
+    zone.innerHTML = "";
+    if (!data.length) { zone.innerHTML = `<p>Vous n'avez rien publié pour l'instant.</p>`; return; }
+    data.forEach(c => {
+      const bloc = document.createElement("div");
+      bloc.className = "bloc-pub";
+      function dessiner() {
+        bloc.innerHTML = "";
+        bloc.appendChild(carteContenu(c));
+        const act = document.createElement("div");
+        act.className = "actions-pub";
+        act.innerHTML = `<button class="btn-outline" data-a="vis">${c.status === "published" ? "Masquer" : "Republier"}</button><button class="btn-outline" data-a="sup">Supprimer</button>`;
+        act.querySelector('[data-a="vis"]').onclick = async () => {
+          const nouveau = c.status === "published" ? "hidden" : "published";
+          const { error: e } = await sb.from("yt_contenus").update({ status: nouveau }).eq("id", c.id);
+          if (e) { alert("Action impossible."); return; }
+          c.status = nouveau; dessiner();
+        };
+        act.querySelector('[data-a="sup"]').onclick = async () => {
+          if (!confirm(`Supprimer « ${c.title} » définitivement ?`)) return;
+          const { error: e } = await sb.from("yt_contenus").delete().eq("id", c.id);
+          if (e) { alert("Suppression impossible."); return; }
+          sb.storage.from("yt-media").remove([c.fichier_path, ...(c.cover_path ? [c.cover_path] : [])]).catch(() => {});
+          bloc.remove();
+          if (!zone.children.length) zone.innerHTML = `<p>Vous n'avez rien publié pour l'instant.</p>`;
+        };
+        bloc.appendChild(act);
+      }
+      dessiner();
+      zone.appendChild(bloc);
+    });
+  } catch (e) {
+    if (wrap.isConnected) zone.innerHTML = `<p class="erreur">${erreurReseau(e) ? "Pas de connexion internet." : "Chargement impossible."}</p>`;
+  }
+}
+
+function vueProfil() {
+  const p = etat.profil || { role: "viewer", full_name: null };
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="centre">${tobiSVG("idle", 100)}<h1 dir="auto" style="margin-top:6px">${esc(p.full_name || "Mon profil")}</h1><span class="badge">${esc(LIBELLE_ROLE[p.role] || "Lecteur")}</span></div><div id="menu" class="liste-contenus" style="margin-top:8px"></div>`;
+  app.appendChild(wrap);
+  const menu = wrap.querySelector("#menu");
+  const ligne = (ic, texte, action) => {
+    const el = document.createElement("div");
+    el.className = "carte ligne-menu";
+    el.tabIndex = 0; el.setAttribute("role", "button");
+    el.innerHTML = `<span>${ic}</span><span>${esc(texte)}</span>`;
+    el.onclick = action;
+    el.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); action(); } };
+    menu.appendChild(el);
+  };
+  if (estCreateur()) { ligne("📤", "Mes publications", () => router("mes-contenus")); ligne("➕", "Publier", () => router("publier")); }
+  else if (p.role === "creator_pending") ligne("⏳", "Demande de créateur en cours", () => router("devenir-createur"));
+  else ligne("✨", "Devenir créateur", () => router("devenir-createur"));
+  if (p.role === "admin") ligne("🛡️", "Demandes de créateurs", () => router("admin"));
+  ligne("📚", "Tobi, le répétiteur des enfants", () => router("choix-enfant"));
+  if (PIN.dispo) ligne("🔒", etat.compteNom ? "Changer mon code" : "Changer le code de verrouillage", () => router("pin-creation", { changer: true, retour: "profil" }));
+  if (!etat.compteNom) ligne("🔑", "Changer le mot de passe", () => router("changer-mot-de-passe"));
+  ligne("🚪", "Se déconnecter", () => { if (confirm("Se déconnecter ?")) deconnecter(); });
+}
+
+
 
 /* ---------- Partie Arabe : invocations et livres ---------- */
 function esc(s) {
@@ -598,7 +1301,7 @@ async function vueArabe() {
         <button class="onglet ${onglet === "livres" ? "actif" : ""}" data-o="livres">📚 Livres</button>
       </div>
       <div id="contenu" style="display:flex;flex-direction:column;gap:10px"></div>`;
-    wrap.querySelector("#retour").onclick = () => { voix.arreter(); router("accueil"); };
+    wrap.querySelector("#retour").onclick = () => { voix.arreter(); router("home"); };
     wrap.querySelectorAll("[data-o]").forEach(b => b.onclick = () => { onglet = b.dataset.o; categorie = null; afficher(); });
   }
 
@@ -755,7 +1458,7 @@ function vueNouveauMotDePasse() {
         if (error) throw error;
         etat.parentId = data.user.id;
         if (parCode && PIN.dispo) await PIN.definir(etat.parentId, mdp);
-        await chargerReferentiel();
+        await apresConnexion();
         router(routeApresConnexion());
         return;
       } catch(e) {
@@ -771,7 +1474,8 @@ function vueNouveauMotDePasse() {
 async function vueChoixEnfant() {
   const wrap = document.createElement("div");
   wrap.className = "ecran centre";
-  wrap.innerHTML = `${tobiSVG("idle", 160)}<h1>Qui révise avec moi aujourd'hui ?</h1><div id="liste" style="width:100%"></div>`;
+  wrap.innerHTML = `${tobiSVG("idle", 160)}<h1>Qui révise avec moi aujourd'hui ?</h1><div id="liste" style="width:100%"></div><button class="btn-text" id="retour-pf" style="margin-top:16px">← Retour à la plateforme</button>`;
+  wrap.querySelector("#retour-pf").onclick = () => router("home");
   app.appendChild(wrap);
 
   let enfants = [];
@@ -849,11 +1553,9 @@ function vueAccueil() {
       <p>Niveau ${e.niveau_nom}</p>
     </div>
     <div class="grille" id="grille" style="margin-top:10px"></div>
-    <button class="btn-outline" id="arabe">🕌 Arabe : invocations et livres</button>
     <button class="btn-outline" id="capturer">📸 Montrer mon cahier à Tobi</button>
     <button class="btn-text" id="params">⚙️ Paramètres</button>
   `;
-  wrap.querySelector("#arabe").onclick = () => router("arabe");
   const grille = wrap.querySelector("#grille");
   etat.matieres.forEach(m => {
     const c = document.createElement("div");
@@ -916,7 +1618,7 @@ function vueParametres() {
       <div class="carte" id="opt-deco" style="margin-top:10px;cursor:pointer">🚪 Se déconnecter</div>
       <button class="btn" id="retour" style="margin-top:20px">Retour</button>
     `;
-    wrap.querySelector("#opt-pin").onclick = () => router("pin-creation", { changer: true });
+    wrap.querySelector("#opt-pin").onclick = () => router("pin-creation", { changer: true, retour: "parametres" });
     wrap.querySelector("#opt-deco").onclick = () => { if (confirm("Se déconnecter ? Il faudra vous reconnecter avec votre e-mail.")) deconnecter(); };
     wrap.querySelector("#opt-ardoise").onclick = () => { mode = "ardoise"; sauverLocal("mode_ecriture", mode); dessiner(); };
     wrap.querySelector("#opt-clavier").onclick = () => { mode = "clavier"; sauverLocal("mode_ecriture", mode); dessiner(); };
@@ -942,7 +1644,7 @@ function vueChangerMotDePasse() {
       <button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : "Enregistrer"}</button>
       <button class="btn-text" id="retour">Retour</button>
     `;
-    wrap.querySelector("#retour").onclick = () => router("parametres");
+    wrap.querySelector("#retour").onclick = () => router("profil");
     wrap.querySelector("#go").onclick = async () => {
       const mdp = wrap.querySelector("#mdp").value;
       const mdp2 = wrap.querySelector("#mdp2").value;
