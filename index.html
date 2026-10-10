@@ -359,10 +359,10 @@ function render() {
     "changer-mot-de-passe": vueChangerMotDePasse,
     "pin-verrou": vuePinVerrou, "pin-creation": vuePinCreation, "arabe": vueArabe,
     "home": vueHome, "publier": vuePublier, "profil": vueProfil, "contenu": vueContenu,
-    "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
+    "langue": vueLangue, "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
   };
   (vues[etat.route] || vueConnexion)();
-  if (["home", "publier", "profil", "contenu", "devenir-createur", "admin", "mes-contenus", "arabe"].includes(etat.route)) app.appendChild(creerNav());
+  if (["home", "publier", "profil", "contenu", "devenir-createur", "admin", "mes-contenus", "arabe", "langue"].includes(etat.route)) app.appendChild(creerNav());
   window.scrollTo(0, 0);
 }
 
@@ -663,7 +663,7 @@ async function apresConnexion() { await Promise.all([chargerReferentiel(), charg
 
 /* ---------- Navigation du bas ---------- */
 const NAV = [{ r: "home", i: "🏠", t: "Accueil" }, { r: "publier", i: "➕", t: "Publier" }, { r: "arabe", i: "🕌", t: "Arabe" }, { r: "profil", i: "👤", t: "Profil" }];
-const ONGLET_DE = { home: "home", contenu: "home", publier: "publier", "devenir-createur": "publier", arabe: "arabe", profil: "profil", admin: "profil", "mes-contenus": "profil" };
+const ONGLET_DE = { home: "home", contenu: "home", publier: "publier", "devenir-createur": "publier", arabe: "arabe", profil: "profil", admin: "profil", "mes-contenus": "profil", langue: "profil" };
 function creerNav() {
   const nav = document.createElement("nav");
   nav.className = "nav-bas";
@@ -672,7 +672,7 @@ function creerNav() {
   NAV.forEach(n => {
     const b = document.createElement("button");
     b.className = "nav-btn" + (n.r === actif ? " actif" : "");
-    b.innerHTML = `<span class="ic">${n.i}</span><span>${n.t}</span>`;
+    b.innerHTML = `<span class="ic">${n.i}</span><span>${esc(t(n.t))}</span>`;
     if (n.r === actif) b.setAttribute("aria-current", "page");
     b.onclick = () => router(n.r);
     nav.appendChild(b);
@@ -721,19 +721,19 @@ function vueHome() {
   wrap.className = "ecran";
   wrap.innerHTML = `
     <div class="pf-entete"><h1>${esc(APP_NOM)}</h1></div>
-    <input class="champ" id="q" type="search" placeholder="Rechercher un titre, un auteur…" style="margin:0" aria-label="Rechercher">
+    <input class="champ" id="q" type="search" placeholder="${esc(t("Rechercher un titre, un auteur…"))}" style="margin:0" aria-label="Rechercher">
     <div class="chips defil" id="types"></div>
     <select class="champ" id="cat" style="margin:0" aria-label="Catégorie">
-      <option value="">Toutes les catégories</option>${CATEGORIES.map(c => `<option>${esc(c)}</option>`).join("")}
+      <option value="">${esc(t("Toutes les catégories"))}</option>${CATEGORIES.map(c => `<option>${esc(c)}</option>`).join("")}
     </select>
     <div id="liste" class="liste-contenus"></div>
     <p class="erreur" id="msg" hidden></p>
-    <button class="btn-outline" id="plus" hidden>Voir plus</button>`;
+    <button class="btn-outline" id="plus" hidden>${esc(t("Voir plus"))}</button>`;
   app.appendChild(wrap);
   const zoneTypes = wrap.querySelector("#types");
   function puces() {
     zoneTypes.innerHTML = "";
-    [["", "Tout"], ...Object.entries(TYPES).map(([k, v]) => [k, `${v.ic} ${v.pl}`])].forEach(([k, nom]) => {
+    [["", t("Tout")], ...Object.entries(TYPES).map(([k, v]) => [k, `${v.ic} ${t(v.pl)}`])].forEach(([k, nom]) => {
       const b = document.createElement("button");
       b.className = "chip" + (k === type ? " actif" : "");
       b.textContent = nom;
@@ -756,7 +756,7 @@ function vueHome() {
       lot.forEach(c => zone.appendChild(carteContenu(c)));
       total += lot.length;
       fini = lot.length < 20;
-      if (!total) zone.innerHTML = `<div class="centre">${tobiSVG("encourage", 120)}<p style="margin-top:8px">${q || type || categorie ? "Aucun résultat." : "Rien n'a encore été publié."}</p></div>`;
+      if (!total) zone.innerHTML = `<div class="centre">${tobiSVG("encourage", 120)}<p style="margin-top:8px">${q || type || categorie ? t("Aucun résultat.") : t("Rien n'a encore été publié.")}</p></div>`;
     } catch (e) {
       if (mon !== seq || !wrap.isConnected) return;
       if (reset) zone.innerHTML = "";
@@ -1224,7 +1224,7 @@ function vueProfil() {
   const p = etat.profil || { role: "viewer", full_name: null };
   const wrap = document.createElement("div");
   wrap.className = "ecran";
-  wrap.innerHTML = `<div class="centre">${tobiSVG("idle", 100)}<h1 dir="auto" style="margin-top:6px">${esc(p.full_name || "Mon profil")}</h1><span class="badge">${esc(LIBELLE_ROLE[p.role] || "Lecteur")}</span></div><div id="menu" class="liste-contenus" style="margin-top:8px"></div>`;
+  wrap.innerHTML = `<div class="centre">${tobiSVG("idle", 100)}<h1 dir="auto" style="margin-top:6px">${esc(p.full_name || t("Mon profil"))}</h1><span class="badge">${esc(t(LIBELLE_ROLE[p.role] || "Lecteur"))}</span></div><div id="menu" class="liste-contenus" style="margin-top:8px"></div>`;
   app.appendChild(wrap);
   const menu = wrap.querySelector("#menu");
   const ligne = (ic, texte, action) => {
@@ -1236,17 +1236,85 @@ function vueProfil() {
     el.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); action(); } };
     menu.appendChild(el);
   };
-  if (estCreateur()) { ligne("📤", "Mes publications", () => router("mes-contenus")); ligne("➕", "Publier", () => router("publier")); }
-  else if (p.role === "creator_pending") ligne("⏳", "Demande de créateur en cours", () => router("devenir-createur"));
-  else ligne("✨", "Devenir créateur", () => router("devenir-createur"));
-  if (p.role === "admin") ligne("🛡️", "Demandes de créateurs", () => router("admin"));
-  ligne("📚", "Tobi, le répétiteur des enfants", () => router("choix-enfant"));
-  if (PIN.dispo) ligne("🔒", etat.compteNom ? "Changer mon code" : "Changer le code de verrouillage", () => router("pin-creation", { changer: true, retour: "profil" }));
+  if (estCreateur()) { ligne("📤", t("Mes publications"), () => router("mes-contenus")); ligne("➕", t("Publier"), () => router("publier")); }
+  else if (p.role === "creator_pending") ligne("⏳", t("Demande de créateur en cours"), () => router("devenir-createur"));
+  else ligne("✨", t("Devenir créateur"), () => router("devenir-createur"));
+  if (p.role === "admin") ligne("🛡️", t("Demandes de créateurs"), () => router("admin"));
+  ligne("📚", t("Tobi, le répétiteur des enfants"), () => router("choix-enfant"));
+  if (PIN.dispo) ligne("🔒", etat.compteNom ? t("Changer mon code") : "Changer le code de verrouillage", () => router("pin-creation", { changer: true, retour: "profil" }));
+  ligne("🌐", t("Langue d'affichage") + " : " + (LANGUES.find(l => l[0] === langue) || LANGUES[0])[1], () => router("langue"));
   if (!etat.compteNom) ligne("🔑", "Changer le mot de passe", () => router("changer-mot-de-passe"));
-  ligne("🚪", "Se déconnecter", () => { if (confirm("Se déconnecter ?")) deconnecter(); });
+  ligne("🚪", t("Se déconnecter"), () => { if (confirm("Se déconnecter ?")) deconnecter(); });
 }
 
 
+
+/* ---------- Langue d'affichage ---------- */
+const LANGUES = [
+  ["fr", "Français"], ["en", "English"], ["ar", "العربية"], ["de", "Deutsch"], ["es", "Español"],
+  ["pt", "Português"], ["it", "Italiano"], ["nl", "Nederlands"], ["tr", "Türkçe"], ["ru", "Русский"],
+  ["zh", "中文"], ["ja", "日本語"], ["ha", "Hausa"], ["hi", "हिन्दी"], ["ur", "اردو"],
+  ["fa", "فارسی"], ["id", "Bahasa Indonesia"], ["sw", "Kiswahili"], ["bn", "বাংলা"], ["pl", "Polski"]
+];
+const RTL = ["ar", "ur", "fa"];
+const CLES_I18N = ["Accueil", "Publier", "Arabe", "Profil", "Rechercher un titre, un auteur…", "Tout", "Toutes les catégories",
+  "Voir plus", "Rien n'a encore été publié.", "Aucun résultat.", "Mes publications", "Devenir créateur",
+  "Demande de créateur en cours", "Demandes de créateurs", "Tobi, le répétiteur des enfants", "Changer mon code",
+  "Se déconnecter", "Langue d'affichage", "Mon profil", "Vidéos", "Audios", "Images", "Livres", "Lecteur",
+  "Créateur vérifié", "Administrateur", "Retour"];
+const TRAD = {
+  en: ["Home","Publish","Arabic","Profile","Search a title or author…","All","All categories","Show more","Nothing published yet.","No results.","My publications","Become a creator","Creator request pending","Creator requests","Tobi, the kids' tutor","Change my code","Log out","Display language","My profile","Videos","Audios","Images","Books","Reader","Verified creator","Administrator","Back"],
+  ar: ["الرئيسية","نشر","العربية","الملف الشخصي","ابحث عن عنوان أو مؤلف…","الكل","كل الفئات","عرض المزيد","لم يُنشر شيء بعد.","لا توجد نتائج.","منشوراتي","كن صانع محتوى","طلب صانع المحتوى قيد المراجعة","طلبات صنّاع المحتوى","توبي، معلّم الأطفال","تغيير رمزي","تسجيل الخروج","لغة العرض","ملفي الشخصي","فيديوهات","تسجيلات صوتية","صور","كتب","قارئ","صانع محتوى موثّق","مدير","رجوع"],
+  de: ["Start","Veröffentlichen","Arabisch","Profil","Titel oder Autor suchen…","Alle","Alle Kategorien","Mehr anzeigen","Noch nichts veröffentlicht.","Keine Ergebnisse.","Meine Beiträge","Creator werden","Creator-Anfrage ausstehend","Creator-Anfragen","Tobi, der Nachhilfelehrer für Kinder","Meinen Code ändern","Abmelden","Anzeigesprache","Mein Profil","Videos","Audios","Bilder","Bücher","Leser","Verifizierter Creator","Administrator","Zurück"],
+  es: ["Inicio","Publicar","Árabe","Perfil","Buscar un título o autor…","Todo","Todas las categorías","Ver más","Aún no hay nada publicado.","Sin resultados.","Mis publicaciones","Ser creador","Solicitud de creador pendiente","Solicitudes de creadores","Tobi, el tutor de los niños","Cambiar mi código","Cerrar sesión","Idioma de visualización","Mi perfil","Vídeos","Audios","Imágenes","Libros","Lector","Creador verificado","Administrador","Volver"],
+  pt: ["Início","Publicar","Árabe","Perfil","Pesquisar título ou autor…","Tudo","Todas as categorias","Ver mais","Nada publicado ainda.","Sem resultados.","Minhas publicações","Tornar-se criador","Pedido de criador pendente","Pedidos de criadores","Tobi, o tutor das crianças","Alterar meu código","Sair","Idioma de exibição","Meu perfil","Vídeos","Áudios","Imagens","Livros","Leitor","Criador verificado","Administrador","Voltar"],
+  it: ["Home","Pubblica","Arabo","Profilo","Cerca titolo o autore…","Tutto","Tutte le categorie","Mostra altro","Ancora nulla di pubblicato.","Nessun risultato.","Le mie pubblicazioni","Diventa creator","Richiesta creator in sospeso","Richieste creator","Tobi, il tutor dei bambini","Cambia il mio codice","Esci","Lingua di visualizzazione","Il mio profilo","Video","Audio","Immagini","Libri","Lettore","Creator verificato","Amministratore","Indietro"],
+  nl: ["Home","Publiceren","Arabisch","Profiel","Zoek titel of auteur…","Alles","Alle categorieën","Meer tonen","Nog niets gepubliceerd.","Geen resultaten.","Mijn publicaties","Maker worden","Makeraanvraag in behandeling","Makeraanvragen","Tobi, de bijlesleraar voor kinderen","Mijn code wijzigen","Uitloggen","Weergavetaal","Mijn profiel","Video's","Audio's","Afbeeldingen","Boeken","Lezer","Geverifieerde maker","Beheerder","Terug"],
+  tr: ["Ana sayfa","Yayınla","Arapça","Profil","Başlık veya yazar ara…","Tümü","Tüm kategoriler","Daha fazla göster","Henüz bir şey yayınlanmadı.","Sonuç yok.","Yayınlarım","İçerik üreticisi ol","Üretici başvurusu bekliyor","Üretici başvuruları","Tobi, çocukların öğretmeni","Kodumu değiştir","Çıkış yap","Görüntüleme dili","Profilim","Videolar","Ses kayıtları","Görseller","Kitaplar","Okuyucu","Doğrulanmış üretici","Yönetici","Geri"],
+  ru: ["Главная","Опубликовать","Арабский","Профиль","Поиск по названию или автору…","Все","Все категории","Показать ещё","Пока ничего не опубликовано.","Ничего не найдено.","Мои публикации","Стать автором","Заявка автора на рассмотрении","Заявки авторов","Тоби, репетитор для детей","Изменить мой код","Выйти","Язык интерфейса","Мой профиль","Видео","Аудио","Изображения","Книги","Читатель","Проверенный автор","Администратор","Назад"],
+  zh: ["首页","发布","阿拉伯语","个人资料","搜索标题或作者…","全部","所有分类","显示更多","尚未发布任何内容。","没有结果。","我的发布","成为创作者","创作者申请审核中","创作者申请","托比，儿童辅导老师","更改我的密码","退出登录","显示语言","我的资料","视频","音频","图片","书籍","读者","认证创作者","管理员","返回"],
+  ja: ["ホーム","投稿","アラビア語","プロフィール","タイトルや著者を検索…","すべて","すべてのカテゴリ","もっと見る","まだ何も公開されていません。","結果がありません。","自分の投稿","クリエイターになる","クリエイター申請を審査中","クリエイター申請","トビ、子ども向け家庭教師","コードを変更","ログアウト","表示言語","マイプロフィール","動画","音声","画像","書籍","閲覧者","認証済みクリエイター","管理者","戻る"],
+  ha: ["Gida","Buga","Larabci","Bayanan martaba","Nemo take ko marubuci…","Duka","Duk rukunoni","Duba ƙari","Ba a buga komai ba tukuna.","Babu sakamako.","Wallafe-wallafena","Zama mai ƙirƙira","Ana duba buƙatar zama mai ƙirƙira","Buƙatun masu ƙirƙira","Tobi, malamin yara","Canja lambata","Fita","Harshen nuni","Bayanan martabata","Bidiyo","Sauti","Hotuna","Littattafai","Mai karatu","Tabbataccen mai ƙirƙira","Mai gudanarwa","Koma baya"],
+  hi: ["होम","प्रकाशित करें","अरबी","प्रोफ़ाइल","शीर्षक या लेखक खोजें…","सभी","सभी श्रेणियाँ","और दिखाएँ","अभी कुछ प्रकाशित नहीं हुआ।","कोई परिणाम नहीं।","मेरे प्रकाशन","क्रिएटर बनें","क्रिएटर अनुरोध लंबित","क्रिएटर अनुरोध","टोबी, बच्चों का ट्यूटर","मेरा कोड बदलें","लॉग आउट","प्रदर्शन भाषा","मेरी प्रोफ़ाइल","वीडियो","ऑडियो","चित्र","पुस्तकें","पाठक","सत्यापित क्रिएटर","प्रशासक","वापस"],
+  ur: ["ہوم","شائع کریں","عربی","پروفائل","عنوان یا مصنف تلاش کریں…","سب","تمام زمرے","مزید دکھائیں","ابھی تک کچھ شائع نہیں ہوا۔","کوئی نتیجہ نہیں۔","میری اشاعتیں","تخلیق کار بنیں","تخلیق کار کی درخواست زیرِ غور","تخلیق کاروں کی درخواستیں","ٹوبی، بچوں کا ٹیوٹر","میرا کوڈ تبدیل کریں","لاگ آؤٹ","زبانِ ڈسپلے","میری پروفائل","ویڈیوز","آڈیوز","تصاویر","کتابیں","قاری","تصدیق شدہ تخلیق کار","منتظم","واپس"],
+  fa: ["خانه","انتشار","عربی","پروفایل","جستجوی عنوان یا نویسنده…","همه","همه دسته‌ها","نمایش بیشتر","هنوز چیزی منتشر نشده است.","نتیجه‌ای یافت نشد.","انتشارات من","تبدیل شدن به تولیدکننده","درخواست تولیدکننده در انتظار","درخواست‌های تولیدکنندگان","توبی، معلم خصوصی کودکان","تغییر کد من","خروج","زبان نمایش","پروفایل من","ویدیوها","صوت‌ها","تصاویر","کتاب‌ها","خواننده","تولیدکننده تأییدشده","مدیر","بازگشت"],
+  id: ["Beranda","Terbitkan","Arab","Profil","Cari judul atau penulis…","Semua","Semua kategori","Tampilkan lagi","Belum ada yang diterbitkan.","Tidak ada hasil.","Publikasi saya","Jadi kreator","Permintaan kreator tertunda","Permintaan kreator","Tobi, tutor anak-anak","Ubah kode saya","Keluar","Bahasa tampilan","Profil saya","Video","Audio","Gambar","Buku","Pembaca","Kreator terverifikasi","Administrator","Kembali"],
+  sw: ["Mwanzo","Chapisha","Kiarabu","Wasifu","Tafuta kichwa au mwandishi…","Vyote","Kategoria zote","Onyesha zaidi","Bado hakuna kilichochapishwa.","Hakuna matokeo.","Machapisho yangu","Kuwa mtayarishaji","Ombi la mtayarishaji linasubiri","Maombi ya watayarishaji","Tobi, mwalimu wa watoto","Badilisha msimbo wangu","Toka","Lugha ya kuonyesha","Wasifu wangu","Video","Sauti","Picha","Vitabu","Msomaji","Mtayarishaji aliyethibitishwa","Msimamizi","Rudi"],
+  bn: ["হোম","প্রকাশ করুন","আরবি","প্রোফাইল","শিরোনাম বা লেখক খুঁজুন…","সব","সব বিভাগ","আরও দেখুন","এখনও কিছু প্রকাশিত হয়নি।","কোনো ফলাফল নেই।","আমার প্রকাশনা","ক্রিয়েটর হোন","ক্রিয়েটর আবেদন অপেক্ষমাণ","ক্রিয়েটর আবেদন","টোবি, শিশুদের টিউটর","আমার কোড পরিবর্তন করুন","লগ আউট","প্রদর্শনের ভাষা","আমার প্রোফাইল","ভিডিও","অডিও","ছবি","বই","পাঠক","যাচাইকৃত ক্রিয়েটর","প্রশাসক","ফিরে যান"],
+  pl: ["Start","Opublikuj","Arabski","Profil","Szukaj tytułu lub autora…","Wszystko","Wszystkie kategorie","Pokaż więcej","Nic jeszcze nie opublikowano.","Brak wyników.","Moje publikacje","Zostań twórcą","Wniosek twórcy oczekuje","Wnioski twórców","Tobi, korepetytor dla dzieci","Zmień mój kod","Wyloguj się","Język wyświetlania","Mój profil","Wideo","Audio","Obrazy","Książki","Czytelnik","Zweryfikowany twórca","Administrator","Wstecz"]
+};
+let langue = chargerLocal("langue", "fr");
+if (!LANGUES.some(l => l[0] === langue)) langue = "fr";
+function t(fr) {
+  if (langue === "fr") return fr;
+  const i = CLES_I18N.indexOf(fr), tr = TRAD[langue];
+  return (i >= 0 && tr && tr[i]) || fr;
+}
+function appliquerLangue() {
+  document.documentElement.lang = langue;
+  document.documentElement.dir = RTL.includes(langue) ? "rtl" : "ltr";
+}
+appliquerLangue();
+
+function vueLangue() {
+  const wrap = document.createElement("div");
+  wrap.className = "ecran";
+  wrap.innerHTML = `<div class="entete" style="padding:0"><button class="btn-text" id="retour" style="padding:4px" aria-label="${esc(t("Retour"))}">←</button><h1>🌐 ${esc(t("Langue d'affichage"))}</h1></div><div id="liste" class="liste-contenus"></div>`;
+  app.appendChild(wrap);
+  wrap.querySelector("#retour").onclick = () => router("profil");
+  const liste = wrap.querySelector("#liste");
+  LANGUES.forEach(([code, nom]) => {
+    const el = document.createElement("div");
+    el.className = "carte ligne-menu";
+    el.tabIndex = 0; el.setAttribute("role", "button");
+    el.lang = code;
+    el.innerHTML = `<span>${code === langue ? "✅" : "◻️"}</span><span>${esc(nom)}</span>`;
+    const choisir = () => { langue = code; sauverLocal("langue", code); appliquerLangue(); router("profil"); };
+    el.onclick = choisir;
+    el.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); choisir(); } };
+    liste.appendChild(el);
+  });
+}
 
 /* ---------- Partie Arabe : invocations et livres ---------- */
 function esc(s) {
