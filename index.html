@@ -324,10 +324,10 @@ function creerReconnaisseur() {
   return r;
 }
 
-const PROTEGEES = ["espace", "groupe-nouveau", "mes-livres", "livre-edition", "live-nouveau", "publier", "devenir-createur", "admin", "mes-contenus", "choix-enfant", "inscription", "accueil", "lecons", "dialogue", "parametres", "changer-mot-de-passe", "pin-creation"];
+const PROTEGEES = ["importer", "espace", "groupe-nouveau", "mes-livres", "livre-edition", "live-nouveau", "publier", "devenir-createur", "admin", "mes-contenus", "choix-enfant", "inscription", "accueil", "lecons", "dialogue", "parametres", "changer-mot-de-passe", "pin-creation"];
 function router(route, params = {}) {
   if (!etat.parentId && PROTEGEES.includes(route)) { route = "connexion"; params = { message: "Connectez-vous pour continuer." }; }
-  if (etat.envoiEnCours && etat.route === "publier" && route !== "publier") {
+  if (etat.envoiEnCours && (etat.route === "publier" || etat.route === "importer") && route !== etat.route) {
     if (!confirm("Un envoi est en cours. Quitter l'annulera. Continuer ?")) return;
     if (etat.annulerEnvoi) etat.annulerEnvoi();
   }
@@ -385,7 +385,7 @@ function render() {
     "changer-mot-de-passe": vueChangerMotDePasse,
     "pin-verrou": vuePinVerrou, "pin-creation": vuePinCreation, "arabe": vueArabe,
     "home": vueHome, "publier": vuePublier, "profil": vueProfil, "contenu": vueContenu,
-    "langue": vueLangue, "fil": vueFil, "espace": vueEspace, "reels": vueReels, "groupes": vueGroupes, "groupe": vueGroupe, "groupe-nouveau": vueNouveauGroupe, "livres": vueLivres, "livre": vueLivre, "mes-livres": vueMesLivres, "livre-edition": vueEditeurLivre, "lives": vueLives, "live": vueLive, "live-nouveau": vueNouveauLive, "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
+    "langue": vueLangue, "fil": vueFil, "espace": vueEspace, "importer": vueImport, "reels": vueReels, "groupes": vueGroupes, "groupe": vueGroupe, "groupe-nouveau": vueNouveauGroupe, "livres": vueLivres, "livre": vueLivre, "mes-livres": vueMesLivres, "livre-edition": vueEditeurLivre, "lives": vueLives, "live": vueLive, "live-nouveau": vueNouveauLive, "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
   };
   (vues[etat.route] || vueConnexion)();
   if (Object.keys(ONGLET_DE).includes(etat.route)) app.appendChild(creerNav());
@@ -696,7 +696,7 @@ async function apresConnexion() { await Promise.all([chargerReferentiel(), charg
 
 /* ---------- Navigation du bas ---------- */
 const NAV = [{ r: "home", i: "🏠", t: "Accueil" }, { r: "fil", i: "🎞️", t: "Fil" }, { r: "espace", i: "➕", t: "Publier" }, { r: "arabe", i: "🕌", t: "Arabe" }, { r: "profil", i: "👤", t: "Profil" }];
-const ONGLET_DE = { fil: "fil", reels: "fil", home: "home", contenu: "home", groupes: "home", groupe: "home", livres: "home", livre: "home", lives: "home", live: "home", espace: "espace", publier: "espace", "groupe-nouveau": "espace", "mes-livres": "espace", "livre-edition": "espace", "live-nouveau": "espace", "mes-contenus": "espace", "devenir-createur": "espace", arabe: "arabe", profil: "profil", admin: "profil", langue: "profil" };
+const ONGLET_DE = { fil: "fil", reels: "fil", home: "home", contenu: "home", groupes: "home", groupe: "home", livres: "home", livre: "home", lives: "home", live: "home", espace: "espace", publier: "espace", "groupe-nouveau": "espace", "mes-livres": "espace", "livre-edition": "espace", "live-nouveau": "espace", importer: "espace", "mes-contenus": "espace", "devenir-createur": "espace", arabe: "arabe", profil: "profil", admin: "profil", langue: "profil" };
 function creerNav() {
   const nav = document.createElement("nav");
   nav.className = "nav-bas";
@@ -817,7 +817,7 @@ function lecteurHTML(c) {
   const t = TYPES[c.type] || TYPES.video;
   if (c.type === "video" || c.type === "reel") return `<video id="media" class="lecteur-video" controls playsinline preload="metadata" ${cover ? `poster="${esc(cover)}"` : ""} src="${esc(url)}"></video>`;
   if (c.type === "audio") return `<div class="lecteur-audio">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="vig-ic" style="font-size:64px">🎧</span>`}<audio id="media" controls preload="metadata" src="${esc(url)}"></audio></div>`;
-  if (c.type === "fichier") return `<div class="lecteur-doc"><span class="vig-ic" style="font-size:64px">📎</span><b dir="auto">${esc(c.title)}</b>${c.taille_octets ? `<small>${fmtTaille(c.taille_octets)}</small>` : ""}<a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(url)}" target="_blank" rel="noopener noreferrer" download>Télécharger</a></div>`;
+  if (c.type === "fichier") return `<div class="lecteur-doc"><span class="vig-ic" style="font-size:64px">📎</span><b dir="auto">${esc(c.title)}</b>${c.taille_octets ? `<small>${fmtTaille(c.taille_octets)}</small>` : ""}<a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Ouvrir</a></div>`;
   if (c.type === "image") return `<a href="${esc(url)}" target="_blank" rel="noopener"><img class="lecteur-image" src="${esc(url)}" alt="${esc(c.title)}"></a>`;
   return `<div class="lecteur-doc">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="vig-ic" style="font-size:64px">${t.ic}</span>`}
     <a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(url)}" target="_blank" rel="noopener">${c.mime === "application/epub+zip" ? "Télécharger le livre" : "Ouvrir"}</a></div>`;
@@ -852,7 +852,9 @@ async function vueContenu() {
     <p>${t.ic} ${t.nom}${c.category ? " · " + esc(c.category) : ""}${chaine ? " · " + chaine : ""}</p>
     <p>${c.views_count || 0} vue${(c.views_count || 0) > 1 ? "s" : ""}${c.duration_seconds ? " · " + fmtDuree(c.duration_seconds) : ""}${c.taille_octets ? " · " + fmtTaille(c.taille_octets) : ""}${c.auteur ? " · Auteur : " + esc(c.auteur) : ""}</p>
     ${c.description ? `<div class="desc" dir="auto">${esc(c.description)}</div>` : ""}
-    <button class="btn-outline" id="partager">🔗 Partager</button>`;
+    <button class="btn-outline" id="partager">🔗 Partager</button>
+    <button class="btn-outline" id="telecharger">⬇️ Télécharger sur mon appareil</button>`;
+  wrap.querySelector("#telecharger").onclick = () => telechargerContenu(c);
   wrap.querySelector("#retour").onclick = () => router("home");
   const lien = location.origin + location.pathname + "#c=" + c.id;
   const bp = wrap.querySelector("#partager");
@@ -1244,7 +1246,8 @@ async function vueMesContenus() {
         bloc.appendChild(carteContenu(c));
         const act = document.createElement("div");
         act.className = "actions-pub";
-        act.innerHTML = `<button class="btn-outline" data-a="vis">${c.status === "published" ? "Masquer" : "Republier"}</button><button class="btn-outline" data-a="sup">Supprimer</button>`;
+        act.innerHTML = `<button class="btn-outline" data-a="vis">${c.status === "published" ? "Masquer" : "Republier"}</button><button class="btn-outline" data-a="dl">Télécharger</button><button class="btn-outline" data-a="sup">Supprimer</button>`;
+        act.querySelector('[data-a="dl"]').onclick = () => telechargerContenu(c);
         act.querySelector('[data-a="vis"]').onclick = async () => {
           const nouveau = c.status === "published" ? "hidden" : "published";
           const { error: e } = await sb.from("yt_contenus").update({ status: nouveau }).eq("id", c.id);
@@ -1311,6 +1314,118 @@ function vueProfil() {
 
 
 
+/* ---------- Export : télécharger un contenu sur l'appareil ---------- */
+function nomTelechargement(c) {
+  const ext = ((c.fichier_path || "").split(".").pop() || "").toLowerCase();
+  const base = String(c.title || "fichier").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 100) || "fichier";
+  return ext && !base.toLowerCase().endsWith("." + ext) ? base + "." + ext : base;
+}
+function telechargerContenu(c) {
+  const url = sb.storage.from("yt-media").getPublicUrl(c.fichier_path, { download: nomTelechargement(c) }).data.publicUrl;
+  const a = document.createElement("a");
+  a.href = url; a.rel = "noopener"; a.download = nomTelechargement(c);
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------- Import en lot (créateurs vérifiés) ---------- */
+function typeAuto(f) {
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  let m = (f.type || "").toLowerCase();
+  if (!m || m === "application/octet-stream") m = MIME_EXT[ext] || "";
+  m = MIME_SYN[m] || m;
+  if (!EXT_DE_MIME[m]) return "fichier";
+  if (m.startsWith("video/")) return "video";
+  if (m.startsWith("audio/")) return "audio";
+  if (m.startsWith("image/")) return "image";
+  if (m === "application/pdf") return "pdf";
+  if (m === "application/epub+zip") return "livre";
+  return "fichier";
+}
+async function importerUn(it, commun, maj) {
+  const f = it.f, type = it.type, ext = (f.name.split(".").pop() || "").toLowerCase();
+  if (type === "fichier" && EXT_BLOQUEES.includes(ext)) throw new Error("Type de fichier non autorisé (sécurité).");
+  const mime = mimeDe(f, type);
+  if (!mimeCoherent(mime, type)) throw new Error("Format non accepté.");
+  if (f.size > TAILLE_MAX[type]) throw new Error(`Trop gros (maximum ${fmtTaille(TAILLE_MAX[type])}).`);
+  maj("Lecture…");
+  const meta = await lireMeta(f, type);
+  if (meta.duree && meta.duree > DUREE_MAX) throw new Error("Dure plus de 2 h.");
+  const uid = etat.parentId, idc = uuid();
+  const extNom = ((ext).match(/^[a-z0-9]{1,8}$/) || [""])[0];
+  const chemin = `${uid}/${idc}.${mime === "application/octet-stream" ? (extNom || "bin") : EXT_DE_MIME[mime]}`;
+  const cheminCover = `${uid}/${idc}-cover.jpg`;
+  const envoi = envoyerFichier(f, chemin, mime, (a, b) => maj(`${b ? Math.min(100, Math.floor(a * 100 / b)) : 0} %`));
+  it.envoi = envoi;
+  await envoi.promesse;
+  let coverOk = false;
+  if (meta.vignette) { const r = await sb.storage.from("yt-media").upload(cheminCover, meta.vignette, { contentType: "image/jpeg", upsert: false }); coverOk = !r.error; }
+  const titre = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 150) || "Sans titre";
+  const { data, error } = await sb.from("yt_contenus").insert({
+    channel_id: etat.chaine.id, title: titre, category: commun.cat || "Autre", type, fichier_path: chemin, cover_path: coverOk ? cheminCover : null,
+    duration_seconds: meta.duree ? Math.round(meta.duree) : null, taille_octets: f.size, mime, status: "published", published_at: new Date().toISOString()
+  }).select("id").single();
+  if (error) { await sb.storage.from("yt-media").remove([chemin, ...(coverOk ? [cheminCover] : [])]).catch(() => {}); throw error; }
+  if (commun.groupe) { try { await sb.from("yt_groupe_posts").insert({ groupe_id: commun.groupe, contenu_id: data.id }); } catch (e) {} }
+}
+function vueImport() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  if (!etat.chaine) { router("espace"); return; }
+  const w = ecran("Importer des fichiers", ["espace"]);
+  let items = [], groupes = [], enCours = false, stop = false;
+  sb.from("yt_groupes").select("id,nom").eq("owner_id", etat.parentId).then(r => { groupes = (r && r.data) || []; if (w.isConnected && !enCours) dessiner(); }, () => {});
+  function dessiner() {
+    if (!w.isConnected) return;
+    const cat = (w.querySelector("#cat") || {}).value || "Cours", gr = (w.querySelector("#groupe") || {}).value || "";
+    w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+    const attente = items.filter(i => i.statut !== "ok").length;
+    w.insertAdjacentHTML("beforeend", `<p>Choisissez vos vidéos, audios, images, PDF ou autres fichiers (plusieurs à la fois). Chaque fichier devient une publication.</p>
+      <button class="btn-outline" id="choisir" ${enCours ? "disabled" : ""}>＋ Choisir des fichiers</button>
+      <input type="file" id="fichiers" multiple hidden>
+      <select class="champ" id="cat" style="margin:0" aria-label="Catégorie" ${enCours ? "disabled" : ""}>${CATEGORIES.map(c => `<option ${c === cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      ${groupes.length ? `<select class="champ" id="groupe" style="margin:0" aria-label="Groupe" ${enCours ? "disabled" : ""}><option value="">Publier aussi dans un groupe (facultatif)</option>${groupes.map(g => `<option value="${esc(g.id)}" ${g.id === gr ? "selected" : ""}>${esc(g.nom)}</option>`).join("")}</select>` : ""}
+      <div id="liste" class="liste-contenus"></div>
+      ${items.length ? (enCours ? `<button class="btn-outline" id="stop">Arrêter</button>` : `<button class="btn" id="go" ${attente ? "" : "disabled"}>${items.some(i => i.statut === "erreur") ? "Réessayer / continuer" : "Tout publier"} (${attente})</button>`) : ""}
+      <p style="font-size:12px">Gardez l'écran allumé pendant l'envoi. Si le réseau coupe, l'envoi reprend tout seul.</p>`);
+    const z = w.querySelector("#liste");
+    items.forEach(it => {
+      const el = document.createElement("div"); el.className = "carte";
+      const ic = (TYPES[it.type] || TYPES.fichier).ic;
+      el.innerHTML = `<div style="display:flex;gap:8px;align-items:center"><span>${ic}</span><div style="min-width:0;flex:1"><b dir="auto" style="word-break:break-all">${esc(it.f.name)}</b><br><small>${fmtTaille(it.f.size)} · <span class="st" ${it.statut === "erreur" ? `style="color:var(--rouge)"` : ""}>${esc(it.statut === "ok" ? "Publié ✓" : it.statut === "erreur" ? it.msg : it.statut === "cours" ? it.msg : "En attente")}</span></small></div>${enCours || it.statut === "ok" ? "" : `<button class="btn-text" data-r="1" aria-label="Retirer">✕</button>`}</div>`;
+      it.el = el;
+      const r = el.querySelector("[data-r]"); if (r) r.onclick = () => { items = items.filter(x => x !== it); dessiner(); };
+      z.appendChild(el);
+    });
+    const inp = w.querySelector("#fichiers");
+    w.querySelector("#choisir").onclick = () => inp.click();
+    inp.onchange = () => {
+      [...inp.files].forEach(f => { if (!items.some(i => i.f.name === f.name && i.f.size === f.size)) items.push({ f, type: typeAuto(f), statut: "attente", msg: "" }); });
+      dessiner();
+    };
+    const go = w.querySelector("#go"); if (go) go.onclick = lancer;
+    const st = w.querySelector("#stop"); if (st) st.onclick = () => { stop = true; const it = items.find(i => i.statut === "cours"); if (it && it.envoi) it.envoi.annuler(); };
+  }
+  async function lancer() {
+    const commun = { cat: w.querySelector("#cat").value, groupe: (w.querySelector("#groupe") || {}).value || "" };
+    enCours = true; stop = false;
+    etat.envoiEnCours = true; window.onbeforeunload = () => true; garderEveille(true);
+    etat.annulerEnvoi = () => { stop = true; const it = items.find(i => i.statut === "cours"); if (it && it.envoi) it.envoi.annuler(); };
+    dessiner();
+    for (const it of items) {
+      if (stop) break;
+      if (it.statut === "ok") continue;
+      it.statut = "cours"; it.msg = "…";
+      const maj = m => { it.msg = m; const s = it.el && it.el.querySelector(".st"); if (s) s.textContent = m; };
+      try { await importerUn(it, commun, maj); it.statut = "ok"; }
+      catch (e) { it.statut = "erreur"; it.msg = /annulé/i.test(String(e && e.message)) ? "Annulé" : messageEnvoi(e) === "L'envoi a échoué. Réessayez." && e && e.message ? e.message : messageEnvoi(e); }
+      if (w.isConnected) dessiner();
+    }
+    enCours = false; etat.envoiEnCours = false; etat.annulerEnvoi = null; window.onbeforeunload = null; garderEveille(false);
+    items.forEach(i => { if (i.statut === "cours") i.statut = "attente"; });
+    if (w.isConnected) dessiner();
+  }
+  dessiner();
+}
+
 /* ====================== ESPACE CRÉATEUR : reels, groupes, livres écrits, lives ====================== */
 function ecran(titre, retour, corps) {
   const w = document.createElement("div");
@@ -1330,7 +1445,8 @@ function exigerConnexion() { router("connexion", { message: "Connectez-vous pour
 function vueEspace() {
   if (!estCreateur()) return vueDevenirCreateur();
   const w = ecran("Mon espace", null, `<p>Chaîne : <b dir="auto">${esc(etat.chaine ? etat.chaine.name : "")}</b></p><div class="tuiles" id="t"></div>`);
-  [["📎", "Publier un fichier", "Vidéo, audio, image, PDF, document…", () => router("publier")],
+  [["📥", "Importer des fichiers", "Plusieurs à la fois depuis l'appareil", () => router("importer")],
+   ["📎", "Publier un fichier", "Vidéo, audio, image, PDF, document…", () => router("publier")],
    ["📱", "Créer un reel", "Vidéo courte (90 s maximum)", () => router("publier", { type: "reel" })],
    ["👥", "Créer un groupe", "Réunissez votre communauté", () => router("groupe-nouveau")],
    ["📚", "Écrire un livre", "Chapitres, publication en ligne", () => router("mes-livres")],
