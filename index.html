@@ -138,6 +138,23 @@ textarea.champ { min-height: 90px; resize: vertical; font-family: inherit; }
 .poste-titre { font-weight: 600; }
 .poste-pied { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--texte-doux); }
 .nav-btn { min-width: 0; font-size: 11px; }
+.tuiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tuiles.petites { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tuile { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; background: var(--surface); border-radius: 14px; padding: 12px 6px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: var(--texte); }
+.tuile b { font-size: 13px; } .tuile small { font-size: 11px; color: var(--texte-doux); }
+.tuile-ic { font-size: 28px; }
+.tuiles.petites .tuile b { font-size: 11px; }
+.reels { height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px)); overflow-y: scroll; scroll-snap-type: y mandatory; background: #000; }
+.reel { position: relative; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; display: flex; align-items: center; justify-content: center; color: #fff; }
+.reel video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.reel.vide { flex-direction: column; gap: 12px; padding: 20px; text-align: center; }
+.reel-bas { position: absolute; left: 0; right: 64px; bottom: 0; padding: 40px 14px 16px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+.reel-actions { position: absolute; right: 8px; bottom: 24px; display: flex; flex-direction: column; gap: 12px; }
+.reel-actions button { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.5); color: #fff; font-size: 20px; }
+.video-int { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; background: #000; }
+.video-int iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.desc.lecture { font-size: 18px; line-height: 1.7; }
+h2 { font-size: 18px; margin: 0; }
 </style>
 </head>
 <body>
@@ -307,7 +324,7 @@ function creerReconnaisseur() {
   return r;
 }
 
-const PROTEGEES = ["publier", "devenir-createur", "admin", "mes-contenus", "choix-enfant", "inscription", "accueil", "lecons", "dialogue", "parametres", "changer-mot-de-passe", "pin-creation"];
+const PROTEGEES = ["espace", "groupe-nouveau", "mes-livres", "livre-edition", "live-nouveau", "publier", "devenir-createur", "admin", "mes-contenus", "choix-enfant", "inscription", "accueil", "lecons", "dialogue", "parametres", "changer-mot-de-passe", "pin-creation"];
 function router(route, params = {}) {
   if (!etat.parentId && PROTEGEES.includes(route)) { route = "connexion"; params = { message: "Connectez-vous pour continuer." }; }
   if (etat.envoiEnCours && etat.route === "publier" && route !== "publier") {
@@ -368,10 +385,10 @@ function render() {
     "changer-mot-de-passe": vueChangerMotDePasse,
     "pin-verrou": vuePinVerrou, "pin-creation": vuePinCreation, "arabe": vueArabe,
     "home": vueHome, "publier": vuePublier, "profil": vueProfil, "contenu": vueContenu,
-    "langue": vueLangue, "fil": vueFil, "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
+    "langue": vueLangue, "fil": vueFil, "espace": vueEspace, "reels": vueReels, "groupes": vueGroupes, "groupe": vueGroupe, "groupe-nouveau": vueNouveauGroupe, "livres": vueLivres, "livre": vueLivre, "mes-livres": vueMesLivres, "livre-edition": vueEditeurLivre, "lives": vueLives, "live": vueLive, "live-nouveau": vueNouveauLive, "devenir-createur": vueDevenirCreateur, "admin": vueAdmin, "mes-contenus": vueMesContenus
   };
   (vues[etat.route] || vueConnexion)();
-  if (["home", "fil", "publier", "profil", "contenu", "devenir-createur", "admin", "mes-contenus", "arabe", "langue"].includes(etat.route)) app.appendChild(creerNav());
+  if (Object.keys(ONGLET_DE).includes(etat.route)) app.appendChild(creerNav());
   window.scrollTo(0, 0);
 }
 
@@ -611,21 +628,26 @@ const APP_NOM = "Tobi";
 const REF_PROJET = SUPABASE_URL.replace("https://", "").split(".")[0];
 const DUREE_MAX = 7200; // 2 h
 const MO = 1024 ** 2, GO = 1024 ** 3;
-const TAILLE_MAX = { video: 4 * GO, audio: GO, image: 25 * MO, pdf: 300 * MO, livre: 300 * MO };
+const TAILLE_MAX = { video: 4 * GO, audio: GO, image: 25 * MO, pdf: 300 * MO, livre: 300 * MO, reel: 300 * MO, fichier: 2 * GO };
+const REEL_MAX = 90;
+const EXT_BLOQUEES = ["exe", "apk", "bat", "cmd", "com", "msi", "scr", "js", "mjs", "jar", "sh", "ps1", "vbs", "html", "htm", "xhtml", "svg", "php", "dll", "lnk"];
 const TYPES = {
   video: { nom: "Vidéo", pl: "Vidéos", ic: "🎬", accept: "video/mp4,video/webm,video/quicktime,video/3gpp,.mp4,.m4v,.webm,.mov,.3gp" },
   audio: { nom: "Audio", pl: "Audios", ic: "🎧", accept: "audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.amr" },
   image: { nom: "Image", pl: "Images", ic: "🖼️", accept: "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" },
   pdf: { nom: "PDF", pl: "PDF", ic: "📄", accept: "application/pdf,.pdf" },
-  livre: { nom: "Livre", pl: "Livres", ic: "📚", accept: "application/pdf,application/epub+zip,.pdf,.epub" }
+  livre: { nom: "Livre", pl: "Livres", ic: "📚", accept: "application/pdf,application/epub+zip,.pdf,.epub" },
+  reel: { nom: "Reel", pl: "Reels", ic: "📱", accept: "video/mp4,video/webm,video/quicktime,video/3gpp,.mp4,.m4v,.webm,.mov,.3gp" },
+  fichier: { nom: "Fichier", pl: "Fichiers", ic: "📎", accept: "" }
 };
 const CATEGORIES = ["Cours", "Rappel", "Coran", "Conférence", "Éducation", "Enfants", "Autre"];
 const MIME_EXT = { mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", "3gp": "video/3gpp",
+  mkv: "video/x-matroska", mpeg: "video/mpeg", mpg: "video/mpeg", flac: "audio/flac", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation", odt: "application/vnd.oasis.opendocument.text", ods: "application/vnd.oasis.opendocument.spreadsheet", odp: "application/vnd.oasis.opendocument.presentation", zip: "application/zip", rar: "application/vnd.rar", "7z": "application/x-7z-compressed", gz: "application/gzip", txt: "text/plain", csv: "text/csv", json: "application/json", rtf: "application/rtf",
   mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/opus", wav: "audio/wav", amr: "audio/amr",
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", pdf: "application/pdf", epub: "application/epub+zip" };
 const MIME_SYN = { "audio/mp3": "audio/mpeg", "audio/x-mpeg": "audio/mpeg", "audio/m4a": "audio/mp4", "audio/x-aac": "audio/aac",
   "audio/wave": "audio/x-wav", "audio/vnd.wave": "audio/x-wav", "video/x-m4v": "video/mp4", "image/jpg": "image/jpeg" };
-const EXT_DE_MIME = { "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "video/3gpp": "3gp",
+const EXT_DE_MIME = { "video/x-matroska": "mkv", "video/mpeg": "mpg", "audio/flac": "flac", "audio/x-flac": "flac", "application/msword": "doc", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx", "application/vnd.ms-excel": "xls", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx", "application/vnd.ms-powerpoint": "ppt", "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx", "application/vnd.oasis.opendocument.text": "odt", "application/vnd.oasis.opendocument.spreadsheet": "ods", "application/vnd.oasis.opendocument.presentation": "odp", "application/zip": "zip", "application/x-zip-compressed": "zip", "application/vnd.rar": "rar", "application/x-rar-compressed": "rar", "application/x-7z-compressed": "7z", "application/gzip": "gz", "text/plain": "txt", "text/csv": "csv", "application/json": "json", "application/rtf": "rtf", "application/octet-stream": "bin", "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "video/3gpp": "3gp",
   "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/ogg": "ogg", "audio/opus": "opus",
   "audio/webm": "weba", "audio/wav": "wav", "audio/x-wav": "wav", "audio/3gpp": "3gp", "audio/amr": "amr",
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf", "application/epub+zip": "epub" };
@@ -673,8 +695,8 @@ async function chargerProfil() {
 async function apresConnexion() { await Promise.all([chargerReferentiel(), chargerProfil()]); }
 
 /* ---------- Navigation du bas ---------- */
-const NAV = [{ r: "home", i: "🏠", t: "Accueil" }, { r: "fil", i: "🎞️", t: "Fil" }, { r: "publier", i: "➕", t: "Publier" }, { r: "arabe", i: "🕌", t: "Arabe" }, { r: "profil", i: "👤", t: "Profil" }];
-const ONGLET_DE = { fil: "fil", home: "home", contenu: "home", publier: "publier", "devenir-createur": "publier", arabe: "arabe", profil: "profil", admin: "profil", "mes-contenus": "profil", langue: "profil" };
+const NAV = [{ r: "home", i: "🏠", t: "Accueil" }, { r: "fil", i: "🎞️", t: "Fil" }, { r: "espace", i: "➕", t: "Publier" }, { r: "arabe", i: "🕌", t: "Arabe" }, { r: "profil", i: "👤", t: "Profil" }];
+const ONGLET_DE = { fil: "fil", reels: "fil", home: "home", contenu: "home", groupes: "home", groupe: "home", livres: "home", livre: "home", lives: "home", live: "home", espace: "espace", publier: "espace", "groupe-nouveau": "espace", "mes-livres": "espace", "livre-edition": "espace", "live-nouveau": "espace", "mes-contenus": "espace", "devenir-createur": "espace", arabe: "arabe", profil: "profil", admin: "profil", langue: "profil" };
 function creerNav() {
   const nav = document.createElement("nav");
   nav.className = "nav-bas";
@@ -732,6 +754,7 @@ function vueHome() {
   wrap.className = "ecran";
   wrap.innerHTML = `
     <div class="pf-entete"><h1>${esc(APP_NOM)}</h1></div>
+    <div class="tuiles petites" id="explorer"></div>
     <input class="champ" id="q" type="search" placeholder="${esc(t("Rechercher un titre, un auteur…"))}" style="margin:0" aria-label="Rechercher">
     <div class="chips defil" id="types"></div>
     <select class="champ" id="cat" style="margin:0" aria-label="Catégorie">
@@ -741,6 +764,11 @@ function vueHome() {
     <p class="erreur" id="msg" hidden></p>
     <button class="btn-outline" id="plus" hidden>${esc(t("Voir plus"))}</button>`;
   app.appendChild(wrap);
+  [["📱", "Reels", "reels"], ["👥", "Groupes", "groupes"], ["🔴", "Lives", "lives"], ["📖", "Livres écrits", "livres"]].forEach(([ic, nom, r]) => {
+    const b = document.createElement("button"); b.className = "tuile";
+    b.innerHTML = `<span class="tuile-ic">${ic}</span><b>${esc(nom)}</b>`; b.onclick = () => router(r);
+    wrap.querySelector("#explorer").appendChild(b);
+  });
   const zoneTypes = wrap.querySelector("#types");
   function puces() {
     zoneTypes.innerHTML = "";
@@ -787,8 +815,9 @@ function vueHome() {
 function lecteurHTML(c) {
   const url = urlMedia(c.fichier_path), cover = c.cover_path ? urlMedia(c.cover_path) : "";
   const t = TYPES[c.type] || TYPES.video;
-  if (c.type === "video") return `<video id="media" class="lecteur-video" controls playsinline preload="metadata" ${cover ? `poster="${esc(cover)}"` : ""} src="${esc(url)}"></video>`;
+  if (c.type === "video" || c.type === "reel") return `<video id="media" class="lecteur-video" controls playsinline preload="metadata" ${cover ? `poster="${esc(cover)}"` : ""} src="${esc(url)}"></video>`;
   if (c.type === "audio") return `<div class="lecteur-audio">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="vig-ic" style="font-size:64px">🎧</span>`}<audio id="media" controls preload="metadata" src="${esc(url)}"></audio></div>`;
+  if (c.type === "fichier") return `<div class="lecteur-doc"><span class="vig-ic" style="font-size:64px">📎</span><b dir="auto">${esc(c.title)}</b>${c.taille_octets ? `<small>${fmtTaille(c.taille_octets)}</small>` : ""}<a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(url)}" target="_blank" rel="noopener noreferrer" download>Télécharger</a></div>`;
   if (c.type === "image") return `<a href="${esc(url)}" target="_blank" rel="noopener"><img class="lecteur-image" src="${esc(url)}" alt="${esc(c.title)}"></a>`;
   return `<div class="lecteur-doc">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="vig-ic" style="font-size:64px">${t.ic}</span>`}
     <a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(url)}" target="_blank" rel="noopener">${c.mime === "application/epub+zip" ? "Télécharger le livre" : "Ouvrir"}</a></div>`;
@@ -874,9 +903,9 @@ async function reduireImage(blob, max = 640) {
 }
 function lireMeta(f, type) {
   return new Promise((ok, ko) => {
-    if (type === "pdf" || type === "livre") return ok({ duree: null, vignette: null });
+    if (type === "pdf" || type === "livre" || type === "fichier") return ok({ duree: null, vignette: null });
     if (type === "image") return reduireImage(f).then(b => ok({ duree: null, vignette: b }), () => ko(new Error("Image illisible.")));
-    const url = URL.createObjectURL(f), el = document.createElement(type === "video" ? "video" : "audio");
+    const url = URL.createObjectURL(f), el = document.createElement(type === "video" || type === "reel" ? "video" : "audio");
     let fini = false;
     const clore = (fn, v) => { if (fini) return; fini = true; clearTimeout(tLecture); clearTimeout(tCapture); URL.revokeObjectURL(url); el.removeAttribute("src"); el.load(); fn(v); };
     const tLecture = setTimeout(() => clore(ko, new Error("Impossible de lire ce fichier (format non reconnu).")), 25000);
@@ -905,10 +934,13 @@ function mimeDe(f, type) {
   if (!m || m === "application/octet-stream") m = MIME_EXT[ext] || "";
   m = MIME_SYN[m] || m;
   if (ext === "3gp" && type === "audio") m = "audio/3gpp";
+  if (type === "fichier" && !EXT_DE_MIME[m]) m = "application/octet-stream";
   return m;
 }
 function mimeCoherent(m, type) {
   if (!EXT_DE_MIME[m]) return false;
+  if (type === "fichier") return true;
+  if (type === "reel") return m.startsWith("video/");
   if (type === "video") return m.startsWith("video/");
   if (type === "audio") return m.startsWith("audio/");
   if (type === "image") return m.startsWith("image/");
@@ -974,11 +1006,12 @@ function vuePublier() {
     app.appendChild(w);
     return;
   }
-  let type = "video", fichier = null, mime = "", meta = null, cover = null, lecture = false, erreur = "", info = "";
-  const champs = { titre: "", desc: "", cat: "Cours", auteur: "" };
+  let type = (etat.params && TYPES[etat.params.type]) ? etat.params.type : "video", groupes = [], fichier = null, mime = "", meta = null, cover = null, lecture = false, erreur = "", info = "";
+  const champs = { titre: "", desc: "", cat: "Cours", auteur: "", groupe: "" };
   const wrap = document.createElement("div");
   wrap.className = "ecran";
   app.appendChild(wrap);
+  sb.from("yt_groupes").select("id,nom").eq("owner_id", etat.parentId).order("created_at", { ascending: false }).then(r => { groupes = (r && r.data) || []; if (groupes.length && wrap.isConnected && !etat.envoiEnCours) { lire(); dessiner(); } }, () => {});
 
   function lire() { Object.keys(champs).forEach(k => { const el = wrap.querySelector("#" + k); if (el) champs[k] = el.value; }); }
   function dessiner() {
@@ -994,6 +1027,7 @@ function vuePublier() {
       <input class="champ" id="titre" maxlength="150" placeholder="Titre" style="margin:0" dir="auto">
       <textarea class="champ" id="desc" maxlength="5000" placeholder="Description (facultatif)" style="margin:0" dir="auto"></textarea>
       <select class="champ" id="cat" style="margin:0" aria-label="Catégorie">${CATEGORIES.map(c => `<option ${c === champs.cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      ${groupes.length ? `<select class="champ" id="groupe" style="margin:0" aria-label="Groupe"><option value="">Publier aussi dans un groupe (facultatif)</option>${groupes.map(g => `<option value="${esc(g.id)}" ${g.id === champs.groupe ? "selected" : ""}>${esc(g.nom)}</option>`).join("")}</select>` : ""}
       ${type === "livre" ? `<input class="champ" id="auteur" maxlength="120" placeholder="Auteur du livre" style="margin:0" dir="auto">` : ""}
       ${["audio", "pdf", "livre"].includes(type) ? `<label style="font-size:13px;color:var(--texte-doux)">Image de couverture (facultatif)<input type="file" id="cover" accept="image/jpeg,image/png,image/webp" style="display:block;margin-top:4px"></label>` : ""}
       ${info ? `<p>${esc(info)}</p>` : ""}
@@ -1025,12 +1059,14 @@ function vuePublier() {
     lire();
     erreur = ""; info = "";
     const m = mimeDe(f, type);
+    if (type === "fichier" && EXT_BLOQUEES.includes((f.name.split(".").pop() || "").toLowerCase())) { fichier = null; meta = null; erreur = "Ce type de fichier n'est pas autorisé (sécurité)."; dessiner(); return; }
     if (!mimeCoherent(m, type)) { fichier = null; meta = null; erreur = `Ce fichier n'est pas ${type === "image" ? "une" : "un"} ${TYPES[type].nom.toLowerCase()} accepté${type === "image" ? "e" : ""}.`; dessiner(); return; }
     if (f.size > TAILLE_MAX[type]) { fichier = null; meta = null; erreur = `Fichier trop gros (maximum ${fmtTaille(TAILLE_MAX[type])}).`; dessiner(); return; }
     fichier = f; mime = m; meta = null; lecture = true; dessiner();
     try {
       meta = await lireMeta(f, type);
-      if (meta.duree && meta.duree > DUREE_MAX) { erreur = `Ce fichier dure ${fmtDuree(meta.duree)} : la limite est de 2 h (${fmtDuree(DUREE_MAX)}).`; fichier = null; meta = null; }
+      if (type === "reel" && !(meta.duree > 0 && meta.duree <= REEL_MAX)) { erreur = `Un reel dure ${REEL_MAX} secondes au maximum (ce fichier : ${fmtDuree(meta.duree || 0)}).`; fichier = null; meta = null; }
+      else if (meta.duree && meta.duree > DUREE_MAX) { erreur = `Ce fichier dure ${fmtDuree(meta.duree)} : la limite est de 2 h (${fmtDuree(DUREE_MAX)}).`; fichier = null; meta = null; }
       else if (!champs.titre) champs.titre = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").slice(0, 150);
     } catch (e) { fichier = null; meta = null; erreur = e.message || "Fichier illisible."; }
     lecture = false;
@@ -1043,7 +1079,8 @@ function vuePublier() {
     if (!titre) { erreur = "Donnez un titre à votre publication."; dessiner(); return; }
     erreur = "";
     const uid = etat.parentId, idc = uuid();
-    const chemin = `${uid}/${idc}.${EXT_DE_MIME[mime]}`;
+    const extNom = ((fichier.name.split(".").pop() || "").toLowerCase().match(/^[a-z0-9]{1,8}$/) || [""])[0];
+    const chemin = `${uid}/${idc}.${mime === "application/octet-stream" ? (extNom || "bin") : EXT_DE_MIME[mime]}`;
     const cheminCover = `${uid}/${idc}-cover.jpg`;
     let coverEnvoyee = false, envoi = null, annule = false;
     wrap.innerHTML = `
@@ -1083,6 +1120,7 @@ function vuePublier() {
         await sb.storage.from("yt-media").remove([chemin, ...(coverEnvoyee ? [cheminCover] : [])]).catch(() => {});
         throw error;
       }
+      if (champs.groupe) { try { await sb.from("yt_groupe_posts").insert({ groupe_id: champs.groupe, contenu_id: data.id }); } catch (e) {} }
       arreter();
       wrap.innerHTML = `<div class="centre">${tobiSVG("celebre", 130)}<h1>Publié !</h1><p style="margin-top:6px" dir="auto">${esc(titre)} est en ligne.</p></div>
         <button class="btn" id="voir">Voir la publication</button>
@@ -1260,7 +1298,7 @@ function vueProfil() {
     el.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); action(); } };
     menu.appendChild(el);
   };
-  if (estCreateur()) { ligne("📤", t("Mes publications"), () => router("mes-contenus")); ligne("➕", t("Publier"), () => router("publier")); }
+  if (estCreateur()) { ligne("📤", t("Mes publications"), () => router("mes-contenus")); ligne("🗂️", "Mon espace", () => router("espace")); }
   else if (p.role === "creator_pending") ligne("⏳", t("Demande de créateur en cours"), () => router("devenir-createur"));
   else ligne("✨", t("Devenir créateur"), () => router("devenir-createur"));
   if (p.role === "admin") ligne("🛡️", t("Demandes de créateurs"), () => router("admin"));
@@ -1272,6 +1310,529 @@ function vueProfil() {
 }
 
 
+
+/* ====================== ESPACE CRÉATEUR : reels, groupes, livres écrits, lives ====================== */
+function ecran(titre, retour, corps) {
+  const w = document.createElement("div");
+  w.className = "ecran";
+  w.innerHTML = `<div class="entete" style="padding:0">${retour ? `<button class="btn-text" id="retour" style="padding:4px" aria-label="Retour">←</button>` : ""}<h1 dir="auto">${esc(titre)}</h1></div>${corps || ""}`;
+  app.appendChild(w);
+  if (retour) w.querySelector("#retour").onclick = () => router(retour[0], retour[1] || {});
+  return w;
+}
+const txtErr = (e, d) => erreurReseau(e) ? "Pas de connexion internet." : (d || "Action impossible.");
+function dateLocale(iso, avecHeure) {
+  try { return new Date(iso).toLocaleString(langue, avecHeure ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }); } catch (e) { return ""; }
+}
+function exigerConnexion() { router("connexion", { message: "Connectez-vous pour continuer." }); }
+
+/* ---------- Mon espace (hub du créateur) ---------- */
+function vueEspace() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  const w = ecran("Mon espace", null, `<p>Chaîne : <b dir="auto">${esc(etat.chaine ? etat.chaine.name : "")}</b></p><div class="tuiles" id="t"></div>`);
+  [["📎", "Publier un fichier", "Vidéo, audio, image, PDF, document…", () => router("publier")],
+   ["📱", "Créer un reel", "Vidéo courte (90 s maximum)", () => router("publier", { type: "reel" })],
+   ["👥", "Créer un groupe", "Réunissez votre communauté", () => router("groupe-nouveau")],
+   ["📚", "Écrire un livre", "Chapitres, publication en ligne", () => router("mes-livres")],
+   ["🔴", "Programmer un live", "Cours en direct", () => router("live-nouveau")],
+   ["📤", "Mes publications", "Masquer ou supprimer", () => router("mes-contenus")]
+  ].forEach(([ic, nom, sous, f]) => {
+    const b = document.createElement("button");
+    b.className = "tuile"; b.innerHTML = `<span class="tuile-ic">${ic}</span><b>${esc(nom)}</b><small>${esc(sous)}</small>`;
+    b.onclick = f; w.querySelector("#t").appendChild(b);
+  });
+}
+
+/* ---------- Reels : vidéos courtes en plein écran ---------- */
+function vueReels() {
+  const zone = document.createElement("div");
+  zone.className = "reels";
+  app.appendChild(zone);
+  let total = 0, enCours = false, fini = false;
+  const videos = new Set();
+  const obs = new IntersectionObserver(es => es.forEach(en => {
+    const v = en.target;
+    if (en.isIntersecting && en.intersectionRatio >= 0.7) { videos.forEach(x => { if (x !== v) x.pause(); }); const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+    else v.pause();
+  }), { threshold: [0, 0.7, 1] });
+  function reel(c) {
+    const el = document.createElement("section");
+    el.className = "reel";
+    const cover = c.cover_path ? urlMedia(c.cover_path) : "";
+    const nom = c.yt_channels && c.yt_channels.name ? c.yt_channels.name : APP_NOM;
+    el.innerHTML = `<video playsinline loop muted preload="metadata" ${cover ? `poster="${esc(cover)}"` : ""} src="${esc(urlMedia(c.fichier_path))}"></video>
+      <div class="reel-bas"><b dir="auto">${esc(nom)}</b><span dir="auto">${esc(c.title)}</span>${c.description ? `<small dir="auto">${esc(c.description.slice(0, 140))}</small>` : ""}</div>
+      <div class="reel-actions"><button data-a="son" aria-label="Son">🔇</button><button data-a="part" aria-label="Partager">🔗</button><button data-a="ouvrir" aria-label="Ouvrir">⋯</button></div>`;
+    const v = el.querySelector("video");
+    v.onclick = () => { if (v.paused) v.play().catch(() => {}); else v.pause(); };
+    el.querySelector('[data-a="son"]').onclick = ev => { v.muted = !v.muted; ev.target.textContent = v.muted ? "🔇" : "🔊"; };
+    el.querySelector('[data-a="part"]').onclick = async () => {
+      const lien = location.origin + location.pathname + "#c=" + c.id;
+      try { if (navigator.share) await navigator.share({ title: c.title, url: lien }); else { await navigator.clipboard.writeText(lien); alert("Lien copié"); } } catch (e) {}
+    };
+    el.querySelector('[data-a="ouvrir"]').onclick = () => router("contenu", { id: c.id, c });
+    videos.add(v); obs.observe(v);
+    return el;
+  }
+  async function charger() {
+    if (enCours || fini) return;
+    enCours = true;
+    try {
+      const { data, error } = await sb.from("yt_contenus").select(CHAMPS_CONTENU).eq("status", "published").eq("type", "reel")
+        .order("published_at", { ascending: false }).range(total, total + 4);
+      if (error) throw error;
+      if (!zone.isConnected) return;
+      (data || []).forEach(c => zone.appendChild(reel(c)));
+      total += (data || []).length;
+      if ((data || []).length < 5) fini = true;
+      else { const s = zone.children[zone.children.length - 2]; if (s) suite.observe(s); }
+      if (!total) zone.innerHTML = `<div class="reel vide"><p>Aucun reel pour l'instant.</p>${estCreateur() ? `<button class="btn" id="cr">Créer un reel</button>` : ""}</div>`;
+      const cr = zone.querySelector("#cr"); if (cr) cr.onclick = () => router("publier", { type: "reel" });
+    } catch (e) { if (!total) zone.innerHTML = `<div class="reel vide"><p>${esc(txtErr(e, "Chargement impossible."))}</p></div>`; }
+    enCours = false;
+  }
+  const suite = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { suite.unobserve(en.target); charger(); } }));
+  charger();
+}
+
+/* ---------- Groupes ---------- */
+async function vueGroupes() {
+  const w = ecran("Groupes", ["home"], `${estCreateur() ? `<button class="btn" id="nv">＋ Créer un groupe</button>` : ""}
+    <input class="champ" id="q" type="search" placeholder="Rechercher un groupe" style="margin:0"><div id="liste" class="liste-contenus"><div class="centre"><div class="spinner"></div></div></div>`);
+  const nv = w.querySelector("#nv"); if (nv) nv.onclick = () => router("groupe-nouveau");
+  let seq = 0, minuteur = null;
+  async function charger() {
+    const mon = ++seq, zone = w.querySelector("#liste");
+    try {
+      let req = sb.from("yt_groupes").select("id,nom,description,created_at,yt_groupe_membres(count)").order("created_at", { ascending: false }).limit(60);
+      const mot = w.querySelector("#q").value.replace(/[%,()*\\]/g, " ").trim();
+      if (mot) req = req.ilike("nom", `%${mot}%`);
+      const { data, error } = await req;
+      if (error) throw error;
+      if (mon !== seq || !w.isConnected) return;
+      zone.innerHTML = data.length ? "" : `<p>Aucun groupe.</p>`;
+      data.forEach(g => {
+        const n = g.yt_groupe_membres && g.yt_groupe_membres[0] ? g.yt_groupe_membres[0].count : 0;
+        const c = document.createElement("div");
+        c.className = "carte ligne-menu"; c.tabIndex = 0; c.setAttribute("role", "button");
+        c.innerHTML = `<span style="font-size:28px">👥</span><div style="min-width:0"><b dir="auto">${esc(g.nom)}</b><br><small>${n} membre${n > 1 ? "s" : ""}</small></div>`;
+        c.onclick = () => router("groupe", { id: g.id });
+        zone.appendChild(c);
+      });
+    } catch (e) { if (mon === seq && w.isConnected) w.querySelector("#liste").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+  }
+  w.querySelector("#q").oninput = () => { clearTimeout(minuteur); minuteur = setTimeout(charger, 350); };
+  charger();
+}
+
+function vueNouveauGroupe() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  let erreur = "", enCours = false;
+  const w = ecran("Nouveau groupe", ["groupes"]);
+  function dessiner() {
+    const nom = (w.querySelector("#nom") || {}).value || "", desc = (w.querySelector("#desc") || {}).value || "";
+    w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+    w.insertAdjacentHTML("beforeend", `<input class="champ" id="nom" maxlength="60" placeholder="Nom du groupe (3 à 60 caractères)" dir="auto" style="margin:0">
+      <textarea class="champ" id="desc" maxlength="1000" placeholder="Description (facultatif)" dir="auto" style="margin:0"></textarea>
+      ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}<button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : "Créer le groupe"}</button>`);
+    w.querySelector("#nom").value = nom; w.querySelector("#desc").value = desc;
+    w.querySelector("#go").onclick = async () => {
+      const n = w.querySelector("#nom").value.trim(), d = w.querySelector("#desc").value.trim();
+      if (n.length < 3) { erreur = "Le nom doit faire au moins 3 caractères."; dessiner(); return; }
+      enCours = true; erreur = ""; dessiner();
+      try {
+        const { data, error } = await sb.from("yt_groupes").insert({ nom: n, description: d || null, owner_id: etat.parentId }).select("id").single();
+        if (error) throw error;
+        router("groupe", { id: data.id }); return;
+      } catch (e) { erreur = txtErr(e, "Création impossible."); }
+      enCours = false; dessiner();
+    };
+  }
+  dessiner();
+}
+
+async function vueGroupe() {
+  const id = etat.params.id;
+  const w = ecran("", ["groupes"], `<div class="centre"><div class="spinner"></div></div>`);
+  let g, membre = false, nb = 0, posts = [];
+  const proprietaire = () => g && etat.parentId && g.owner_id === etat.parentId;
+  async function charger() {
+    const r = await sb.from("yt_groupes").select("*").eq("id", id).maybeSingle();
+    if (r.error) throw r.error;
+    g = r.data;
+    if (!g) return;
+    const m = await sb.from("yt_groupe_membres").select("user_id", { count: "exact" }).eq("groupe_id", id);
+    nb = m.count || 0;
+    membre = !!(etat.parentId && (m.data || []).some(x => x.user_id === etat.parentId));
+    const p = await sb.from("yt_groupe_posts").select(`id,auteur_id,auteur_nom,body,created_at,contenu_id,yt_contenus(${CHAMPS_CONTENU})`).eq("groupe_id", id).order("created_at", { ascending: false }).limit(50);
+    posts = p.data || [];
+  }
+  async function dessiner() {
+    if (!w.isConnected) return;
+    w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+    w.querySelector("h1").textContent = g.nom;
+    w.insertAdjacentHTML("beforeend", `<div class="carte"><div class="desc" dir="auto">${esc(g.description || "")}</div><p style="margin-top:6px"><small>${nb} membre${nb > 1 ? "s" : ""}</small></p></div>
+      ${proprietaire() ? "" : `<button class="${membre ? "btn-outline" : "btn"}" id="adh">${membre ? "Quitter le groupe" : "Rejoindre le groupe"}</button>`}
+      ${membre ? `<textarea class="champ" id="txt" maxlength="2000" placeholder="Écrire dans le groupe…" dir="auto" style="margin:0"></textarea>
+        <button class="btn" id="env">Publier</button>
+        ${proprietaire() ? `<button class="btn-outline" id="part">Partager une de mes publications</button>` : ""}` : ""}
+      <p class="erreur" id="msg" hidden></p><div id="posts" class="liste-contenus"></div>
+      ${proprietaire() ? `<button class="btn-text" id="sup" style="color:var(--rouge)">Supprimer le groupe</button>` : ""}`);
+    const msg = w.querySelector("#msg");
+    const err = e => { msg.textContent = txtErr(e); msg.hidden = false; };
+    const adh = w.querySelector("#adh");
+    if (adh) adh.onclick = async () => {
+      if (!etat.parentId) return exigerConnexion();
+      adh.disabled = true;
+      const r = membre ? await sb.from("yt_groupe_membres").delete().eq("groupe_id", id).eq("user_id", etat.parentId)
+                       : await sb.from("yt_groupe_membres").insert({ groupe_id: id, user_id: etat.parentId });
+      if (r.error) { adh.disabled = false; return err(r.error); }
+      try { await charger(); } catch (e) {} dessiner();
+    };
+    const env = w.querySelector("#env");
+    if (env) env.onclick = async () => {
+      const b = w.querySelector("#txt").value.trim(); if (!b) return;
+      env.disabled = true;
+      const r = await sb.from("yt_groupe_posts").insert({ groupe_id: id, body: b });
+      if (r.error) { env.disabled = false; return err(r.error); }
+      try { await charger(); } catch (e) {} dessiner();
+    };
+    const part = w.querySelector("#part");
+    if (part) part.onclick = async () => {
+      part.disabled = true;
+      const { data, error } = etat.chaine ? await sb.from("yt_contenus").select("id,title").eq("channel_id", etat.chaine.id).eq("status", "published").order("published_at", { ascending: false }).limit(50) : { data: [] };
+      part.disabled = false;
+      if (error) return err(error);
+      if (!data.length) { msg.textContent = "Aucune publication à partager."; msg.hidden = false; return; }
+      const sel = document.createElement("select"); sel.className = "champ"; sel.style.margin = "0";
+      sel.innerHTML = data.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+      const ok = document.createElement("button"); ok.className = "btn"; ok.textContent = "Partager";
+      part.replaceWith(sel); sel.after(ok);
+      ok.onclick = async () => {
+        ok.disabled = true;
+        const r = await sb.from("yt_groupe_posts").insert({ groupe_id: id, contenu_id: sel.value });
+        if (r.error) { ok.disabled = false; return err(r.error); }
+        try { await charger(); } catch (e) {} dessiner();
+      };
+    };
+    const sup = w.querySelector("#sup");
+    if (sup) sup.onclick = async () => {
+      if (!confirm("Supprimer ce groupe et toutes ses publications ?")) return;
+      const r = await sb.from("yt_groupes").delete().eq("id", id);
+      if (r.error) return err(r.error);
+      router("groupes");
+    };
+    const zp = w.querySelector("#posts");
+    if (!posts.length) zp.innerHTML = `<p>Aucune publication pour l'instant.</p>`;
+    posts.forEach(p => {
+      const el = document.createElement("div");
+      el.className = "carte";
+      el.innerHTML = `<div class="poste-tete"><span class="poste-av">${esc((p.auteur_nom || "?").charAt(0).toUpperCase())}</span><div><b dir="auto">${esc(p.auteur_nom || "Membre")}</b><br><small>${esc(dateLocale(p.created_at, true))}</small></div></div>
+        ${p.body ? `<div class="desc" dir="auto" style="margin-top:8px">${esc(p.body)}</div>` : ""}<div class="cc"></div>`;
+      if (p.yt_contenus) { const cc = el.querySelector(".cc"); cc.style.marginTop = "8px"; cc.appendChild(carteContenu(p.yt_contenus)); }
+      if (etat.parentId && (p.auteur_id === etat.parentId || proprietaire())) {
+        const d = document.createElement("button"); d.className = "btn-text"; d.textContent = "Supprimer"; d.style.color = "var(--rouge)";
+        d.onclick = async () => { if (!confirm("Supprimer cette publication ?")) return; const r = await sb.from("yt_groupe_posts").delete().eq("id", p.id); if (r.error) return err(r.error); posts = posts.filter(x => x.id !== p.id); dessiner(); };
+        el.appendChild(d);
+      }
+      zp.appendChild(el);
+    });
+  }
+  try {
+    await charger();
+    if (!w.isConnected) return;
+    if (!g) { w.querySelector(".centre").innerHTML = `<p>Groupe introuvable.</p>`; return; }
+    dessiner();
+  } catch (e) { if (w.isConnected) w.querySelector(".centre").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+}
+
+/* ---------- Livres écrits : lecture ---------- */
+async function vueLivres() {
+  const w = ecran("Livres", ["home"], `${estCreateur() ? `<button class="btn" id="nv">✍️ Écrire un livre</button>` : ""}<div id="liste" class="liste-contenus"><div class="centre"><div class="spinner"></div></div></div>`);
+  const nv = w.querySelector("#nv"); if (nv) nv.onclick = () => router("mes-livres");
+  try {
+    const { data, error } = await sb.from("yt_livres_ecrits").select("id,titre,description,cover_path,updated_at,yt_channels(name)").eq("statut", "publie").order("updated_at", { ascending: false }).limit(60);
+    if (error) throw error;
+    if (!w.isConnected) return;
+    const z = w.querySelector("#liste"); z.innerHTML = data.length ? "" : `<p>Aucun livre publié.</p>`;
+    data.forEach(l => z.appendChild(carteLivre(l, () => router("livre", { id: l.id }))));
+  } catch (e) { if (w.isConnected) w.querySelector("#liste").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+}
+function carteLivre(l, f) {
+  const c = document.createElement("div");
+  c.className = "carte ligne-menu"; c.tabIndex = 0; c.setAttribute("role", "button");
+  c.innerHTML = `<span style="font-size:30px">📖</span><div style="min-width:0"><b dir="auto">${esc(l.titre)}</b><br><small dir="auto">${esc(l.yt_channels && l.yt_channels.name || "")}${l.statut === "brouillon" ? " · brouillon" : ""}</small></div>`;
+  c.onclick = f; return c;
+}
+
+async function vueLivre() {
+  const id = etat.params.id;
+  const w = ecran("", ["livres"], `<div class="centre"><div class="spinner"></div></div>`);
+  try {
+    const r = await sb.from("yt_livres_ecrits").select("*,yt_channels(name,creator_id)").eq("id", id).maybeSingle();
+    if (r.error) throw r.error;
+    const l = r.data;
+    if (!w.isConnected) return;
+    if (!l) { w.querySelector(".centre").innerHTML = `<p>Livre introuvable.</p>`; return; }
+    const ch = await sb.from("yt_chapitres").select("id,position,titre").eq("livre_id", id).order("position");
+    const chapitres = ch.data || [];
+    const moi = etat.parentId && l.yt_channels && l.yt_channels.creator_id === etat.parentId;
+    function sommaire() {
+      w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+      w.querySelector("h1").textContent = l.titre;
+      w.insertAdjacentHTML("beforeend", `<p dir="auto"><small>${esc(l.yt_channels && l.yt_channels.name || "")}</small></p>${l.description ? `<div class="desc" dir="auto">${esc(l.description)}</div>` : ""}
+        ${moi ? `<button class="btn-outline" id="ed">Modifier ce livre</button>` : ""}<div id="ch" class="liste-contenus"></div>`);
+      const ed = w.querySelector("#ed"); if (ed) ed.onclick = () => router("livre-edition", { id });
+      const z = w.querySelector("#ch");
+      if (!chapitres.length) z.innerHTML = `<p>Ce livre n'a pas encore de chapitre.</p>`;
+      chapitres.forEach((c, i) => {
+        const el = document.createElement("div"); el.className = "carte ligne-menu"; el.tabIndex = 0; el.setAttribute("role", "button");
+        el.innerHTML = `<span>${i + 1}.</span><span dir="auto">${esc(c.titre)}</span>`;
+        el.onclick = () => lire(i); z.appendChild(el);
+      });
+    }
+    async function lire(i) {
+      const c = chapitres[i];
+      w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+      w.insertAdjacentHTML("beforeend", `<div class="centre"><div class="spinner"></div></div>`);
+      const { data, error } = await sb.from("yt_chapitres").select("titre,corps").eq("id", c.id).maybeSingle();
+      if (!w.isConnected) return;
+      w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+      if (error || !data) { w.insertAdjacentHTML("beforeend", `<p class="erreur">Chapitre illisible.</p><button class="btn-outline" id="som">Sommaire</button>`); w.querySelector("#som").onclick = sommaire; return; }
+      w.querySelector("h1").textContent = data.titre;
+      w.insertAdjacentHTML("beforeend", `<div class="desc lecture" dir="auto">${esc(data.corps)}</div>
+        <div class="actions-pub"><button class="btn-outline" id="pr" ${i === 0 ? "disabled" : ""}>←</button><button class="btn-outline" id="som">Sommaire</button><button class="btn-outline" id="su" ${i === chapitres.length - 1 ? "disabled" : ""}>→</button></div>`);
+      w.querySelector("#pr").onclick = () => lire(i - 1); w.querySelector("#su").onclick = () => lire(i + 1);
+      w.querySelector("#som").onclick = () => { sommaire(); window.scrollTo(0, 0); };
+      window.scrollTo(0, 0);
+    }
+    sommaire();
+  } catch (e) { if (w.isConnected) w.querySelector(".centre").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+}
+
+/* ---------- Livres écrits : création et édition ---------- */
+async function vueMesLivres() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  const w = ecran("Mes livres", ["espace"], `<button class="btn" id="nv">＋ Nouveau livre</button><div id="liste" class="liste-contenus"><div class="centre"><div class="spinner"></div></div></div>`);
+  w.querySelector("#nv").onclick = () => router("livre-edition", {});
+  try {
+    const { data, error } = await sb.from("yt_livres_ecrits").select("id,titre,statut,yt_channels(name)").eq("channel_id", etat.chaine.id).order("updated_at", { ascending: false });
+    if (error) throw error;
+    if (!w.isConnected) return;
+    const z = w.querySelector("#liste"); z.innerHTML = data.length ? "" : `<p>Vous n'avez pas encore écrit de livre.</p>`;
+    data.forEach(l => z.appendChild(carteLivre(l, () => router("livre-edition", { id: l.id }))));
+  } catch (e) { if (w.isConnected) w.querySelector("#liste").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+}
+
+async function vueEditeurLivre() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  let id = etat.params.id || null, l = null, chapitres = [], erreur = "", info = "", ouvert = null;
+  const w = ecran(id ? "Modifier le livre" : "Nouveau livre", ["mes-livres"], `<div class="centre"><div class="spinner"></div></div>`);
+  if (id) {
+    try {
+      const r = await sb.from("yt_livres_ecrits").select("*").eq("id", id).maybeSingle();
+      if (r.error) throw r.error;
+      l = r.data;
+      if (!l) { w.querySelector(".centre").innerHTML = `<p>Livre introuvable.</p>`; return; }
+      const ch = await sb.from("yt_chapitres").select("id,position,titre").eq("livre_id", id).order("position");
+      chapitres = ch.data || [];
+    } catch (e) { w.querySelector(".centre").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; return; }
+  }
+  const vider = () => w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+  function dessiner() {
+    if (!w.isConnected) return;
+    vider();
+    const msg = () => `${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}${info ? `<p style="color:var(--vert);font-weight:600">${esc(info)}</p>` : ""}`;
+    w.insertAdjacentHTML("beforeend", `<input class="champ" id="titre" maxlength="150" placeholder="Titre du livre" dir="auto" style="margin:0">
+      <textarea class="champ" id="desc" maxlength="2000" placeholder="Présentation du livre (facultatif)" dir="auto" style="margin:0"></textarea>
+      ${msg()}<button class="btn" id="enr">${id ? "Enregistrer" : "Créer le livre"}</button>
+      ${id ? `<div class="pf-entete"><h2>Chapitres</h2></div><div id="ch" class="liste-contenus"></div><button class="btn-outline" id="add">＋ Ajouter un chapitre</button>
+        <button class="btn-outline" id="pub">${l.statut === "publie" ? "Dépublier (brouillon)" : "Publier le livre"}</button>
+        <button class="btn-text" id="voir">Voir comme lecteur</button><button class="btn-text" id="sup" style="color:var(--rouge)">Supprimer le livre</button>` : ""}`);
+    w.querySelector("#titre").value = l ? l.titre : ""; w.querySelector("#desc").value = l ? (l.description || "") : "";
+    w.querySelector("#enr").onclick = async () => {
+      const titre = w.querySelector("#titre").value.trim(), description = w.querySelector("#desc").value.trim() || null;
+      if (!titre) { erreur = "Donnez un titre au livre."; info = ""; dessiner(); w.querySelector("#titre").focus(); return; }
+      try {
+        if (id) { const r = await sb.from("yt_livres_ecrits").update({ titre, description }).eq("id", id); if (r.error) throw r.error; l.titre = titre; l.description = description; erreur = ""; info = "Enregistré ✓"; }
+        else {
+          const r = await sb.from("yt_livres_ecrits").insert({ channel_id: etat.chaine.id, titre, description }).select("*").single();
+          if (r.error) throw r.error;
+          l = r.data; id = l.id; erreur = ""; info = "Livre créé. Ajoutez des chapitres.";
+          w.querySelector("h1").textContent = "Modifier le livre";
+        }
+      } catch (e) { erreur = txtErr(e); info = ""; }
+      dessiner();
+    };
+    if (!id) return;
+    const z = w.querySelector("#ch");
+    if (!chapitres.length) z.innerHTML = `<p>Aucun chapitre.</p>`;
+    chapitres.forEach((c, i) => {
+      const el = document.createElement("div"); el.className = "carte ligne-menu";
+      el.innerHTML = `<span style="flex:1;min-width:0" dir="auto">${i + 1}. ${esc(c.titre)}</span><button class="btn-text" data-a="h" ${i === 0 ? "disabled" : ""} aria-label="Monter">↑</button><button class="btn-text" data-a="b" ${i === chapitres.length - 1 ? "disabled" : ""} aria-label="Descendre">↓</button>`;
+      el.onclick = ev => { if (ev.target.closest("button")) return; editerChapitre(c); };
+      el.querySelectorAll("button").forEach(b => b.onclick = async ev => {
+        ev.stopPropagation();
+        const autre = chapitres[i + (b.dataset.a === "h" ? -1 : 1)];
+        try {
+          const a = c.position, o = autre.position;
+          let r = await sb.from("yt_chapitres").update({ position: 1000000 }).eq("id", c.id); if (r.error) throw r.error;
+          r = await sb.from("yt_chapitres").update({ position: a }).eq("id", autre.id); if (r.error) throw r.error;
+          r = await sb.from("yt_chapitres").update({ position: o }).eq("id", c.id); if (r.error) throw r.error;
+          c.position = o; autre.position = a; chapitres.sort((x, y) => x.position - y.position); dessiner();
+        } catch (e) { erreur = txtErr(e); dessiner(); }
+      });
+      z.appendChild(el);
+    });
+    w.querySelector("#add").onclick = async () => {
+      const pos = chapitres.length ? Math.max(...chapitres.map(c => c.position)) + 1 : 1;
+      const r = await sb.from("yt_chapitres").insert({ livre_id: id, position: pos, titre: "Chapitre " + (chapitres.length + 1), corps: "" }).select("id,position,titre").single();
+      if (r.error) { erreur = txtErr(r.error); dessiner(); return; }
+      chapitres.push(r.data); editerChapitre(r.data);
+    };
+    w.querySelector("#pub").onclick = async () => {
+      const nouveau = l.statut === "publie" ? "brouillon" : "publie";
+      if (nouveau === "publie" && !chapitres.length) { erreur = "Ajoutez au moins un chapitre avant de publier."; info = ""; dessiner(); return; }
+      const r = await sb.from("yt_livres_ecrits").update({ statut: nouveau }).eq("id", id);
+      if (r.error) { erreur = txtErr(r.error); info = ""; } else { l.statut = nouveau; erreur = ""; info = nouveau === "publie" ? "Livre publié ✓" : "Livre repassé en brouillon."; }
+      dessiner();
+    };
+    w.querySelector("#voir").onclick = () => router("livre", { id });
+    w.querySelector("#sup").onclick = async () => {
+      if (!confirm("Supprimer ce livre et tous ses chapitres définitivement ?")) return;
+      const r = await sb.from("yt_livres_ecrits").delete().eq("id", id);
+      if (r.error) { erreur = txtErr(r.error); dessiner(); return; }
+      router("mes-livres");
+    };
+  }
+  async function editerChapitre(c) {
+    vider();
+    w.insertAdjacentHTML("beforeend", `<div class="centre"><div class="spinner"></div></div>`);
+    const { data, error } = await sb.from("yt_chapitres").select("titre,corps").eq("id", c.id).maybeSingle();
+    if (!w.isConnected) return;
+    vider();
+    if (error || !data) { erreur = "Chapitre illisible."; dessiner(); return; }
+    let msg = "";
+    w.insertAdjacentHTML("beforeend", `<input class="champ" id="ct" maxlength="150" placeholder="Titre du chapitre" dir="auto" style="margin:0">
+      <textarea class="champ" id="cc" maxlength="100000" placeholder="Écrivez ici…" dir="auto" style="margin:0;min-height:50vh"></textarea>
+      <p id="m" style="color:var(--vert);font-weight:600" aria-live="polite"></p>
+      <button class="btn" id="ok">Enregistrer</button><button class="btn-outline" id="ret">← Retour au livre</button><button class="btn-text" id="del" style="color:var(--rouge)">Supprimer ce chapitre</button>`);
+    w.querySelector("#ct").value = data.titre; w.querySelector("#cc").value = data.corps;
+    const m = w.querySelector("#m");
+    w.querySelector("#ok").onclick = async () => {
+      const titre = w.querySelector("#ct").value.trim() || "Sans titre";
+      const r = await sb.from("yt_chapitres").update({ titre, corps: w.querySelector("#cc").value }).eq("id", c.id);
+      if (r.error) { m.className = "erreur"; m.style.color = ""; m.textContent = txtErr(r.error); return; }
+      c.titre = titre; m.className = ""; m.style.color = "var(--vert)"; m.textContent = "Enregistré ✓";
+    };
+    w.querySelector("#ret").onclick = () => { info = ""; erreur = ""; dessiner(); };
+    w.querySelector("#del").onclick = async () => {
+      if (!confirm("Supprimer ce chapitre ?")) return;
+      const r = await sb.from("yt_chapitres").delete().eq("id", c.id);
+      if (r.error) { m.className = "erreur"; m.textContent = txtErr(r.error); return; }
+      chapitres = chapitres.filter(x => x.id !== c.id); erreur = ""; info = ""; dessiner();
+    };
+  }
+  dessiner();
+}
+
+/* ---------- Cours en direct (lives) ---------- */
+function idYoutube(url) {
+  try {
+    const u = new URL(url), h = u.hostname.replace(/^www\.|^m\./, "");
+    let id = "";
+    if (h === "youtu.be") id = u.pathname.slice(1);
+    else if (h === "youtube.com" || h === "youtube-nocookie.com") id = u.searchParams.get("v") || (/^\/(live|embed|shorts)\/([\w-]{6,})/.exec(u.pathname) || [])[2] || "";
+    return /^[\w-]{6,20}$/.test(id) ? id : "";
+  } catch (e) { return ""; }
+}
+function etiquetteLive(l) {
+  if (l.statut === "en_cours") return ["🔴 En direct", "rouge"];
+  if (l.statut === "termine") return ["Terminé", ""];
+  return [new Date(l.starts_at) < new Date() ? "Prévu" : "À venir", ""];
+}
+async function vueLives() {
+  const w = ecran("Cours en direct", ["home"], `${estCreateur() ? `<button class="btn" id="nv">＋ Programmer un live</button>` : ""}<div id="liste" class="liste-contenus"><div class="centre"><div class="spinner"></div></div></div>`);
+  const nv = w.querySelector("#nv"); if (nv) nv.onclick = () => router("live-nouveau");
+  try {
+    const depuis = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+    const { data, error } = await sb.from("yt_lives").select("id,titre,starts_at,statut,yt_channels(name)").or(`statut.eq.en_cours,starts_at.gte.${depuis}`).order("starts_at", { ascending: true }).limit(60);
+    if (error) throw error;
+    if (!w.isConnected) return;
+    data.sort((a, b) => (b.statut === "en_cours") - (a.statut === "en_cours"));
+    const z = w.querySelector("#liste"); z.innerHTML = data.length ? "" : `<p>Aucun live programmé.</p>`;
+    data.forEach(l => {
+      const [txt, cl] = etiquetteLive(l);
+      const c = document.createElement("div"); c.className = "carte ligne-menu"; c.tabIndex = 0; c.setAttribute("role", "button");
+      c.innerHTML = `<span style="font-size:28px">🎓</span><div style="min-width:0"><b dir="auto">${esc(l.titre)}</b><br><small dir="auto">${esc(l.yt_channels && l.yt_channels.name || "")} · ${esc(dateLocale(l.starts_at, true))}</small><br><span class="badge" ${cl ? `style="background:var(--rouge);color:#fff"` : ""}>${esc(txt)}</span></div>`;
+      c.onclick = () => router("live", { id: l.id }); z.appendChild(c);
+    });
+  } catch (e) { if (w.isConnected) w.querySelector("#liste").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+}
+
+function vueNouveauLive() {
+  if (!estCreateur()) return vueDevenirCreateur();
+  let erreur = "", enCours = false;
+  const w = ecran("Programmer un live", ["lives"]);
+  function dessiner() {
+    const v = {}; ["titre", "desc", "date", "lien"].forEach(k => { const el = w.querySelector("#" + k); v[k] = el ? el.value : ""; });
+    w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+    w.insertAdjacentHTML("beforeend", `<input class="champ" id="titre" maxlength="150" placeholder="Titre du cours" dir="auto" style="margin:0">
+      <textarea class="champ" id="desc" maxlength="2000" placeholder="Description (facultatif)" dir="auto" style="margin:0"></textarea>
+      <label style="font-size:13px;color:var(--texte-doux)">Date et heure<input class="champ" id="date" type="datetime-local" style="margin:4px 0 0"></label>
+      <input class="champ" id="lien" type="url" inputmode="url" placeholder="Lien du live (https://…)" style="margin:0" dir="ltr">
+      <p style="font-size:12px">Créez votre direct sur YouTube Live, Facebook Live, Zoom ou Google Meet, puis collez ici son lien. Les liens YouTube s'affichent directement dans l'application.</p>
+      ${erreur ? `<p class="erreur">${esc(erreur)}</p>` : ""}<button class="btn" id="go" ${enCours ? "disabled" : ""}>${enCours ? "..." : "Programmer"}</button>`);
+    Object.keys(v).forEach(k => { w.querySelector("#" + k).value = v[k]; });
+    w.querySelector("#go").onclick = async () => {
+      const f = {}; ["titre", "desc", "date", "lien"].forEach(k => f[k] = w.querySelector("#" + k).value.trim());
+      if (!f.titre) { erreur = "Donnez un titre."; dessiner(); return; }
+      if (!f.date || isNaN(new Date(f.date))) { erreur = "Choisissez la date et l'heure."; dessiner(); return; }
+      if (!/^https:\/\/[^\s]+$/.test(f.lien)) { erreur = "Le lien doit commencer par https://"; dessiner(); return; }
+      enCours = true; erreur = ""; dessiner();
+      try {
+        const { data, error } = await sb.from("yt_lives").insert({ channel_id: etat.chaine.id, titre: f.titre, description: f.desc || null, starts_at: new Date(f.date).toISOString(), lien: f.lien }).select("id").single();
+        if (error) throw error;
+        router("live", { id: data.id }); return;
+      } catch (e) { erreur = txtErr(e, "Programmation impossible."); }
+      enCours = false; dessiner();
+    };
+  }
+  dessiner();
+}
+
+async function vueLive() {
+  const id = etat.params.id;
+  const w = ecran("", ["lives"], `<div class="centre"><div class="spinner"></div></div>`);
+  try {
+    const r = await sb.from("yt_lives").select("*,yt_channels(name,creator_id)").eq("id", id).maybeSingle();
+    if (r.error) throw r.error;
+    let l = r.data;
+    if (!w.isConnected) return;
+    if (!l) { w.querySelector(".centre").innerHTML = `<p>Live introuvable.</p>`; return; }
+    const moi = etat.parentId && l.yt_channels && l.yt_channels.creator_id === etat.parentId;
+    function dessiner() {
+      w.querySelectorAll(":scope > :not(.entete)").forEach(x => x.remove());
+      w.querySelector("h1").textContent = l.titre;
+      const yt = idYoutube(l.lien), [txt] = etiquetteLive(l);
+      w.insertAdjacentHTML("beforeend", `<p><span class="badge" ${l.statut === "en_cours" ? `style="background:var(--rouge);color:#fff"` : ""}>${esc(txt)}</span> <small dir="auto">${esc(l.yt_channels && l.yt_channels.name || "")} · ${esc(dateLocale(l.starts_at, true))}</small></p>
+        ${l.description ? `<div class="desc" dir="auto">${esc(l.description)}</div>` : ""}
+        ${yt && l.statut !== "termine" ? `<div class="video-int"><iframe src="https://www.youtube-nocookie.com/embed/${esc(yt)}" title="Live" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>` : ""}
+        ${l.statut !== "termine" ? `<a class="btn" style="text-align:center;text-decoration:none;display:block" href="${esc(l.lien)}" target="_blank" rel="noopener noreferrer">${l.statut === "en_cours" ? "Rejoindre le direct" : "Ouvrir le lien du live"}</a>` : ""}
+        ${moi ? `<div class="actions-pub">${l.statut === "programme" ? `<button class="btn-outline" data-s="en_cours">Démarrer le direct</button>` : ""}${l.statut === "en_cours" ? `<button class="btn-outline" data-s="termine">Terminer</button>` : ""}<button class="btn-outline" data-s="sup">Supprimer</button></div>` : ""}
+        <p class="erreur" id="msg" hidden></p>`);
+      w.querySelectorAll("[data-s]").forEach(b => b.onclick = async () => {
+        const s = b.dataset.s, msg = w.querySelector("#msg");
+        const r2 = s === "sup" ? (confirm("Supprimer ce live ?") ? await sb.from("yt_lives").delete().eq("id", id) : null) : await sb.from("yt_lives").update({ statut: s }).eq("id", id);
+        if (!r2) return;
+        if (r2.error) { msg.textContent = txtErr(r2.error); msg.hidden = false; return; }
+        if (s === "sup") { router("lives"); return; }
+        l.statut = s; dessiner();
+      });
+    }
+    dessiner();
+  } catch (e) { if (w.isConnected) w.querySelector(".centre").innerHTML = `<p class="erreur">${esc(txtErr(e, "Chargement impossible."))}</p>`; }
+}
 
 /* ---------- Fil public : vidéos et images en défilement, lecture automatique ---------- */
 function vueFil() {
